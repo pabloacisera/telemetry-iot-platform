@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { api } from '../services/api';
 
 interface AuthState {
@@ -15,6 +15,27 @@ const initialState: AuthState = {
   error: null,
 };
 
+/** Decoded JWT payload shape. */
+interface JwtPayload {
+  sub: number;
+  email: string;
+  role: string;
+}
+
+/**
+ * Safely decode a JWT payload.
+ * Returns null if the token is malformed or cannot be decoded.
+ */
+function decodeJwtPayload(token: string): JwtPayload | null {
+  try {
+    const base64 = token.split('.')[1];
+    const decoded = atob(base64);
+    return JSON.parse(decoded) as JwtPayload;
+  } catch {
+    return null;
+  }
+}
+
 /** Login thunk — calls POST /auth/login, stores access token in memory. */
 export const login = createAsyncThunk(
   'auth/login',
@@ -22,8 +43,9 @@ export const login = createAsyncThunk(
     try {
       const response = await api.post('/auth/login', credentials);
       return response.data as { accessToken: string };
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Login failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Login failed';
+      return rejectWithValue(message);
     }
   },
 );
@@ -35,8 +57,9 @@ export const refreshToken = createAsyncThunk(
     try {
       const response = await api.post('/auth/refresh');
       return response.data as { accessToken: string };
-    } catch (err: any) {
-      return rejectWithValue(err.response?.data?.message || 'Refresh failed');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Refresh failed';
+      return rejectWithValue(message);
     }
   },
 );
@@ -54,7 +77,7 @@ export const authSlice = createSlice({
       state.user = null;
       state.accessToken = null;
     },
-    setUser(state, action) {
+    setUser(state, action: PayloadAction<{ userId: number; email: string; role: string }>) {
       state.user = action.payload;
     },
   },
@@ -67,9 +90,10 @@ export const authSlice = createSlice({
       .addCase(login.fulfilled, (state, action) => {
         state.loading = false;
         state.accessToken = action.payload.accessToken;
-        // Decode JWT payload to get user info
-        const payload = JSON.parse(atob(action.payload.accessToken.split('.')[1]));
-        state.user = { userId: payload.sub, email: payload.email, role: payload.role };
+        const payload = decodeJwtPayload(action.payload.accessToken);
+        if (payload) {
+          state.user = { userId: payload.sub, email: payload.email, role: payload.role };
+        }
       })
       .addCase(login.rejected, (state, action) => {
         state.loading = false;
@@ -77,8 +101,10 @@ export const authSlice = createSlice({
       })
       .addCase(refreshToken.fulfilled, (state, action) => {
         state.accessToken = action.payload.accessToken;
-        const payload = JSON.parse(atob(action.payload.accessToken.split('.')[1]));
-        state.user = { userId: payload.sub, email: payload.email, role: payload.role };
+        const payload = decodeJwtPayload(action.payload.accessToken);
+        if (payload) {
+          state.user = { userId: payload.sub, email: payload.email, role: payload.role };
+        }
       })
       .addCase(refreshToken.rejected, (state) => {
         state.user = null;
