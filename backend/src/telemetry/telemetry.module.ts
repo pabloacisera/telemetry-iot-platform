@@ -5,6 +5,7 @@ import { MotorEvaluationService } from './motor-evaluation.service';
 import { SensorEvaluationService } from './sensor-evaluation.service';
 import { TelemetryRepository } from './telemetry.repository';
 import { StatusTransitionService } from './status-transition.service';
+import { RetentionService } from './retention.service';
 import { RealtimeModule } from '../realtime';
 import { CommandModule } from '../command/command.module';
 
@@ -17,6 +18,7 @@ import { CommandModule } from '../command/command.module';
     SensorEvaluationService,
     TelemetryRepository,
     StatusTransitionService,
+    RetentionService,
   ],
   exports: [TelemetryEvaluationService, StatusTransitionService],
 })
