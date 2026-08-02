@@ -2,6 +2,8 @@
 # Stage 1: install deps and build
 FROM node:20-alpine AS builder
 
+RUN apk add --no-cache openssl
+
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -16,6 +18,8 @@ RUN npx tsc prisma/seed.ts --outDir dist-seed --esModuleInterop --resolveJsonMod
 
 # Stage 2: production image
 FROM node:20-alpine AS runner
+
+RUN apk add --no-cache openssl
 
 WORKDIR /app
 
