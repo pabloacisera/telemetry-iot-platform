@@ -3,9 +3,11 @@ services:
   # Infrastructure (no custom code)
   # ===========================================================
 
-  broker-mqtt:
+  telemetry-broker-mqtt:
     image: eclipse-mosquitto:2
     container_name: broker-mqtt
+    ports:
+      - "1883:1883"
     volumes:
       - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
       - ./mosquitto/password_file:/mosquitto/config/password_file:ro
@@ -19,9 +21,11 @@ services:
     networks:
       - telemetry-net
 
-  db-mysql:
+  telemetry-db-mysql:
     image: mysql:8.0
     container_name: db-mysql
+    ports:
+      - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-telemetry_db}
@@ -37,9 +41,11 @@ services:
     networks:
       - telemetry-net
 
-  mongo-ragstore:
+  telemetry-mongo-ragstore:
     image: mongo:7
     container_name: mongo-ragstore
+    ports:
+      - "27017:27017"
     environment:
       MONGO_INITDB_DATABASE: rag_knowledge
     volumes:
@@ -52,9 +58,11 @@ services:
     networks:
       - telemetry-net
 
-  redis-cache:
+  telemetry-redis-cache:
     image: redis:7-alpine
     container_name: redis-cache
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -67,7 +75,7 @@ services:
   # Application services (custom Dockerfiles)
   # ===========================================================
 
-  backend-nestjs:
+  telemetry-backend-nestjs:
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -84,18 +92,18 @@ services:
       MQTT_BROKER_PORT: 1883
       MONGO_URI: mongodb://mongo-ragstore:27017/rag_knowledge
     depends_on:
-      db-mysql:
+      telemetry-db-mysql:
         condition: service_healthy
-      mongo-ragstore:
+      telemetry-mongo-ragstore:
         condition: service_healthy
-      redis-cache:
+      telemetry-redis-cache:
         condition: service_healthy
-      broker-mqtt:
+      telemetry-broker-mqtt:
         condition: service_healthy
     networks:
       - telemetry-net
 
-  simulator-python:
+  telemetry-simulator-python:
     build:
       context: ./simulator
       dockerfile: Dockerfile
@@ -106,12 +114,12 @@ services:
       MQTT_BROKER_HOST: broker-mqtt
       MQTT_BROKER_PORT: 1883
     depends_on:
-      broker-mqtt:
+      telemetry-broker-mqtt:
         condition: service_healthy
     networks:
       - telemetry-net
 
-  dashboard-grafana:
+  telemetry-dashboard-grafana:
     image: grafana/grafana:11.0.0
     container_name: dashboard-grafana
     ports:
@@ -128,7 +136,7 @@ services:
       - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
       - grafana-data:/var/lib/grafana
     depends_on:
-      db-mysql:
+      telemetry-db-mysql:
         condition: service_healthy
     networks:
       - telemetry-net
