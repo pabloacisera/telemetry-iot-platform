@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
@@ -114,7 +115,23 @@ async function main(): Promise<void> {
     }
   }
 
-  console.log('Seed complete: 3 standards + 15 motors + 45 sensors');
+  // --- Default Users ---
+  const defaultUsers = [
+    { email: 'admin@telemetry.local', password: 'admin123', role: 'admin' },
+    { email: 'operator@telemetry.local', password: 'operator123', role: 'operator' },
+    { email: 'viewer@telemetry.local', password: 'viewer123', role: 'viewer' },
+  ];
+
+  for (const u of defaultUsers) {
+    const passwordHash = await bcrypt.hash(u.password, 10);
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: {},
+      create: { email: u.email, passwordHash, role: u.role },
+    });
+  }
+
+  console.log('Seed complete: 3 standards + 15 motors + 45 sensors + 3 users');
 }
 
 main()
