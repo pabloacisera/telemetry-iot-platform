@@ -9,6 +9,7 @@ import { CommandModule } from './command/command.module';
 import { MotorsModule } from './motors';
 import { AlertsModule } from './alerts';
 import { AuthModule } from './auth';
+import { RagModule } from './rag';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { AuthModule } from './auth';
     MotorsModule,
     AlertsModule,
     AuthModule,
+    RagModule,
   ],
 })
 export class AppModule {}
