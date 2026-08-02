@@ -31,3 +31,4 @@ and Grafana for historical data.
 10. `11-roadmap-future-work.md` — what was intentionally left out and how it would scale.
 11. `12-simulator-guide.md` — the MQTT simulator: what it is, how it works, how to run it.
 12. `13-backend-guide.md` — the backend telemetry core: state machines, modules, design decisions.
+13. `14-auth-guide.md` — authentication and authorization: tokens, roles, rate limiting.
