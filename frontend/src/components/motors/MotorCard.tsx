@@ -15,15 +15,24 @@ interface MotorCardProps {
 /**
  * Single motor card for the grid view.
  * Shows identification, status badge, and last value of each sensor.
- * Clicking navigates to the detail page.
+ * Clicking or pressing Enter/Space navigates to the detail page.
  */
 export function MotorCard({ motor }: MotorCardProps) {
   const navigate = useNavigate();
+
+  /** Handle keyboard interaction for accessibility (Enter and Space). */
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      navigate(`/motors/${motor.id}`);
+    }
+  }
 
   return (
     <div
       className="motor-card"
       onClick={() => navigate(`/motors/${motor.id}`)}
+      onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
       aria-label={`View details for ${motor.code}`}
