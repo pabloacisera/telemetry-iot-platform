@@ -1,0 +1,135 @@
+---
+# Ansible playbook for deploying the IoT Telemetry Platform to EC2.
+#
+# What it does (idempotent — safe to run multiple times):
+# 1. Copies the project to /opt/telemetry-platform/ on the EC2.
+# 2. Copies the production .env file.
+# 3. Runs docker compose up -d (builds and starts all 7 containers).
+# 4. Copies the Nginx site config to the global Nginx conf.d/.
+# 5. Validates and reloads global Nginx (never restarts it).
+#
+# Usage:
+#   cd ansible
+#   ansible-playbook playbook.yml -i inventory.ini
+#
+# Prerequisites on the EC2:
+#   - Docker + Docker Compose v2 installed
+#   - Global Nginx container running at /home/ec2-user/global/nginx
+#   - cloudflared tunnel configured for the domain
+
+- name: Deploy IoT Telemetry Platform
+  hosts: production
+  become: true
+  vars:
+    project_name: telemetry-platform
+    deploy_path: /opt/{{ project_name }}
+    nginx_conf_dir: /home/ec2-user/global/nginx/conf.d
+    app_domain: app1.yourdomain.com
+
+  tasks:
+    # ----------------------------------------------------------
+    # 1. Copy project files
+    # ----------------------------------------------------------
+    - name: Create deployment directory
+      file:
+        path: "{{ deploy_path }}"
+        state: directory
+        owner: ec2-user
+        group: ec2-user
+        mode: "0755"
+
+    - name: Sync project files (excluding .git, node_modules, .venv)
+      synchronize:
+        src: "{{ playbook_dir }}/../"
+        dest: "{{ deploy_path }}/"
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=node_modules"
+          - "--exclude=.venv"
+          - "--exclude=__pycache__"
+          - "--exclude=dist"
+          - "--exclude=coverage"
+        delete: true
+
+    # ----------------------------------------------------------
+    # 2. Production .env
+    # ----------------------------------------------------------
+    - name: Copy production .env file
+      copy:
+        src: "{{ playbook_dir }}/files/.env.production"
+        dest: "{{ deploy_path }}/.env"
+        owner: ec2-user
+        group: ec2-user
+        mode: "0600"
+
+    # ----------------------------------------------------------
+    # 3. Docker Compose up
+    # ----------------------------------------------------------
+    - name: Build and start containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ deploy_path }}"
+        state: present
+        build: policy
+      register: compose_result
+
+    - name: Show compose output
+      debug:
+        var: compose_result.stdout
+      when: compose_result.changed
+
+    - name: Wait for backend to be healthy
+      uri:
+        url: "http://localhost:4001"
+        status_code: [200, 401]  # 401 is fine (means backend is responding, just needs auth)
+      register: backend_health
+      retries: 30
+      delay: 5
+      until: backend_health.status in [200, 401]
+
+    # ----------------------------------------------------------
+    # 4. Nginx site config
+    # ----------------------------------------------------------
+    - name: Copy Nginx site configuration
+      copy:
+        content: |
+          server {
+              listen 80;
+              server_name {{ app_domain }};
+
+              # Backend API + WebSocket
+              location / {
+                  proxy_pass http://host.docker.internal:4001;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+
+                  # WebSocket support
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection "upgrade";
+              }
+
+              # Grafana (sub-path)
+              location /grafana/ {
+                  proxy_pass http://host.docker.internal:4002/;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+        dest: "{{ nginx_conf_dir }}/{{ project_name }}.conf"
+        mode: "0644"
+      register: nginx_config
+
+    # ----------------------------------------------------------
+    # 5. Validate and reload Nginx (NEVER restart)
+    # ----------------------------------------------------------
+    - name: Validate Nginx configuration
+      command: docker exec nginx-global nginx -t
+      changed_when: false
+
+    - name: Reload Nginx (no restart, no downtime)
+      command: docker exec nginx-global nginx -s reload
+      when: nginx_config.changed
