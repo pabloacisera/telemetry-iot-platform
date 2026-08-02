@@ -32,3 +32,4 @@ and Grafana for historical data.
 11. `12-simulator-guide.md` — the MQTT simulator: what it is, how it works, how to run it.
 12. `13-backend-guide.md` — the backend telemetry core: state machines, modules, design decisions.
 13. `14-auth-guide.md` — authentication and authorization: tokens, roles, rate limiting.
+14. `15-frontend-guide.md` — the React dashboard: state management, WebSocket, role gating.
