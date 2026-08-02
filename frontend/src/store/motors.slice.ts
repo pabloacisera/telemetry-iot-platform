@@ -2,7 +2,7 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { api } from '../services/api';
 
 /** Sensor data within a motor. */
-interface SensorData {
+export interface SensorData {
   id: number;
   sensorType: string;
   status: string;
@@ -15,8 +15,29 @@ interface SensorData {
   recentValues: { value: number; timestamp: string }[];
 }
 
+/** Raw motor object returned by the REST API. */
+interface MotorApiResponse {
+  id: number;
+  code: string;
+  name: string;
+  location: string | null;
+  connectionType: string;
+  status: string;
+  statusChangedAt: string | null;
+  sensors: Array<{
+    id: number;
+    sensorType: string;
+    status: string;
+    healthyMax: number;
+    warningMax: number;
+    criticalMax: number;
+    lastValue: number | null;
+    lastReadingAt: string | null;
+  }>;
+}
+
 /** Single motor state. */
-interface MotorData {
+export interface MotorData {
   id: number;
   code: string;
   name: string;
@@ -25,6 +46,8 @@ interface MotorData {
   status: string;
   statusChangedAt: string | null;
   sensors: Record<string, SensorData>;
+  /** Seconds remaining during a restart countdown (null when not restarting). */
+  restartSecondsRemaining: number | null;
 }
 
 interface MotorsState {
@@ -41,8 +64,8 @@ const initialState: MotorsState = {
 
 /** Fetch initial snapshot from GET /motors (Redis-backed). */
 export const fetchMotors = createAsyncThunk('motors/fetchAll', async () => {
-  const response = await api.get('/motors');
-  return response.data as any[];
+  const response = await api.get<MotorApiResponse[]>('/motors');
+  return response.data;
 });
 
 /**
@@ -72,7 +95,6 @@ export const motorsSlice = createSlice({
       sensor.lastReadingAt = recordedAt;
       sensor.recentValues.push({ value, timestamp: recordedAt });
 
-      // Keep ring buffer at ~50 points
       if (sensor.recentValues.length > 50) {
         sensor.recentValues.shift();
       }
@@ -99,6 +121,16 @@ export const motorsSlice = createSlice({
         if (sensor) sensor.status = sensorStatus;
       }
     },
+
+    /** Update restart countdown for a motor. */
+    restartProgressUpdate(state, action: PayloadAction<{
+      motorId: number;
+      secondsRemaining: number;
+    }>) {
+      const motor = state.byId[action.payload.motorId];
+      if (!motor) return;
+      motor.restartSecondsRemaining = action.payload.secondsRemaining;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -112,7 +144,11 @@ export const motorsSlice = createSlice({
           for (const s of motor.sensors) {
             sensors[s.sensorType] = { ...s, recentValues: [] };
           }
-          state.byId[motor.id] = { ...motor, sensors };
+          state.byId[motor.id] = {
+            ...motor,
+            sensors,
+            restartSecondsRemaining: null,
+          };
         }
       })
       .addCase(fetchMotors.rejected, (state, action) => {
@@ -122,4 +158,4 @@ export const motorsSlice = createSlice({
   },
 });
 
-export const { telemetryReceived, statusChanged } = motorsSlice.actions;
+export const { telemetryReceived, statusChanged, restartProgressUpdate } = motorsSlice.actions;
