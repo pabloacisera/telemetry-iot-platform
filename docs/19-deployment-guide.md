@@ -122,3 +122,42 @@ cd scripts && python3 inject_fault.py --motor 7 --type stuck --sensor vibration
 - Does not set up the EC2 instance itself (assumes Amazon Linux with Docker + Docker Compose installed).
 - Does not manage SSL certificates (Cloudflare handles TLS termination).
 - Does not restart the global Nginx container (only validates + reloads its config).
+
+## CI/CD Pipeline
+
+### CI (active now — runs on every push and PR)
+
+The GitHub Actions pipeline at `.github/workflows/ci.yml` runs:
+1. **Backend**: lint → typecheck → unit tests (jest).
+2. **Frontend**: component tests (jest).
+3. **Simulator**: unit tests (pytest).
+4. **Grafana**: validates dashboard JSON syntax.
+5. **Docker**: verifies both custom images build successfully.
+
+All must pass before a PR can be merged.
+
+### CD (future — auto-deploy to EC2)
+
+When ready to enable, the CD stage will:
+1. Trigger only on merge to `main` (not on PRs or feature branches).
+2. Require all CI jobs to pass first.
+3. Run Ansible playbook to deploy to the EC2 automatically.
+
+**Prerequisites to activate:**
+- Add GitHub Secret `EC2_SSH_KEY` (private key for SSH access).
+- Add GitHub Secret `EC2_HOST` (public IP or hostname of the EC2).
+- Fill `ansible/files/.env.production` with real credentials.
+- Update `ansible/inventory.ini` with the EC2 IP.
+
+The CD job is already written (commented out) in `.github/workflows/ci.yml`. Uncomment it when
+the EC2 is ready and secrets are configured.
+
+## Environment variables — single file
+
+All environment variables live in `/.env` (root). There is no separate backend `.env`.
+- **Docker**: `docker-compose.yml` reads from root `.env` via `env_file` and overrides hostnames
+  (e.g., `REDIS_HOST=redis-cache` instead of `localhost`).
+- **Outside Docker** (running `npm run start:dev` directly): the backend reads from root `.env`
+  which has `localhost` values.
+
+Copy `.env.example` to `.env` and fill in your values. Never commit `.env` to git.
