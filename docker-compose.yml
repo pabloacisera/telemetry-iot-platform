@@ -1,0 +1,148 @@
+services:
+  # ===========================================================
+  # Infrastructure (no custom code)
+  # ===========================================================
+
+  broker-mqtt:
+    image: eclipse-mosquitto:2
+    container_name: broker-mqtt
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - ./mosquitto/password_file:/mosquitto/config/password_file:ro
+      - ./mosquitto/acl_file:/mosquitto/config/acl_file:ro
+      - mosquitto-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3", "-u", "backend_service", "-P", "${MQTT_BACKEND_PASS}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - telemetry-net
+
+  db-mysql:
+    image: mysql:8.0
+    container_name: db-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-telemetry_db}
+      MYSQL_USER: ${MYSQL_USER:-telemetry_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - telemetry-net
+
+  mongo-ragstore:
+    image: mongo:7
+    container_name: mongo-ragstore
+    environment:
+      MONGO_INITDB_DATABASE: rag_knowledge
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - telemetry-net
+
+  redis-cache:
+    image: redis:7-alpine
+    container_name: redis-cache
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - telemetry-net
+
+  # ===========================================================
+  # Application services (custom Dockerfiles)
+  # ===========================================================
+
+  backend-nestjs:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: backend-nestjs
+    ports:
+      - "4001:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: mysql://${MYSQL_USER:-telemetry_user}:${MYSQL_PASSWORD}@db-mysql:3306/${MYSQL_DATABASE:-telemetry_db}
+      REDIS_HOST: redis-cache
+      REDIS_PORT: 6379
+      MQTT_BROKER_HOST: broker-mqtt
+      MQTT_BROKER_PORT: 1883
+      MONGO_URI: mongodb://mongo-ragstore:27017/rag_knowledge
+    depends_on:
+      db-mysql:
+        condition: service_healthy
+      mongo-ragstore:
+        condition: service_healthy
+      redis-cache:
+        condition: service_healthy
+      broker-mqtt:
+        condition: service_healthy
+    networks:
+      - telemetry-net
+
+  simulator-python:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    container_name: simulator-python
+    env_file:
+      - .env
+    environment:
+      MQTT_BROKER_HOST: broker-mqtt
+      MQTT_BROKER_PORT: 1883
+    depends_on:
+      broker-mqtt:
+        condition: service_healthy
+    networks:
+      - telemetry-net
+
+  dashboard-grafana:
+    image: grafana/grafana:11.0.0
+    container_name: dashboard-grafana
+    ports:
+      - "4002:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      MYSQL_HOST: db-mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-telemetry_db}
+      MYSQL_GRAFANA_USER: ${MYSQL_USER:-telemetry_user}
+      MYSQL_GRAFANA_PASSWORD: ${MYSQL_PASSWORD}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/grafana.ini:/etc/grafana/grafana.ini:ro
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      db-mysql:
+        condition: service_healthy
+    networks:
+      - telemetry-net
+
+# ===========================================================
+# Volumes & Networks
+# ===========================================================
+
+volumes:
+  mysql-data:
+  mongo-data:
+  mosquitto-data:
+  grafana-data:
+
+networks:
+  telemetry-net:
+    driver: bridge

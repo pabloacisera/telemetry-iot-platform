@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend:
+    name: Backend (lint + typecheck + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+      - run: npm ci
+      - run: npx eslint src/ --max-warnings 0
+      - run: npx tsc --noEmit
+      - run: npx jest --forceExit --ci
+
+  frontend:
+    name: Frontend (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --legacy-peer-deps
+      - run: npx jest --ci
+
+  simulator:
+    name: Simulator (lint + test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: simulator
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt -r requirements-dev.txt
+      - run: python -m pytest tests/ -v
+
+  validate-grafana:
+    name: Validate Grafana dashboards
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JSON syntax
+        run: |
+          for f in grafana/provisioning/dashboards/*.json; do
+            echo "Validating $f..."
+            python3 -c "import json; json.load(open('$f'))" || exit 1
+          done
+          echo "✅ All Grafana dashboards are valid JSON"
+
+  docker-build:
+    name: Docker build (verify images build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build backend image
+        run: docker build -t backend-test ./backend
+      - name: Build simulator image
+        run: docker build -t simulator-test ./simulator
+
+  # ==========================================================
+  # CD (Continuous Deployment) — NOT ACTIVE YET
+  # ==========================================================
+  # Uncomment when ready to auto-deploy to EC2.
+  # Prerequisites:
+  #   1. Add GitHub Secret: EC2_SSH_KEY (private key for the EC2)
+  #   2. Add GitHub Secret: EC2_HOST (public IP of the EC2)
+  #   3. Fill ansible/files/.env.production with real values
+  #   4. Configure ansible/inventory.ini with the EC2 IP
+  #
+  # deploy:
+  #   name: Deploy to EC2 via Ansible
+  #   needs: [backend, frontend, simulator, validate-grafana, docker-build]
+  #   if: github.ref == 'refs/heads/main'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Setup SSH key
+  #       run: |
+  #         mkdir -p ~/.ssh
+  #         echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy_key
+  #         chmod 600 ~/.ssh/deploy_key
+  #     - name: Install Ansible
+  #       run: pip install ansible
+  #     - name: Deploy
+  #       run: |
+  #         ansible-playbook ansible/playbook.yml \
+  #           -i ansible/inventory.ini \
+  #           --private-key ~/.ssh/deploy_key \
+  #           -e "ansible_host=${{ secrets.EC2_HOST }}"
+  #       env:
+  #         ANSIBLE_HOST_KEY_CHECKING: "false"

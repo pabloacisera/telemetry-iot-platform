@@ -36,3 +36,4 @@ and Grafana for historical data.
 15. `16-rag-guide.md` — the RAG module: live context, knowledge base, anti-hallucination, Groq LLM.
 16. `17-grafana-guide.md` — Grafana observability: provisioned dashboards, historical queries, alerts panel.
 17. `18-caching-guide.md` — caching & performance: Redis write-through, rate limiting, fallback strategy.
+18. `19-deployment-guide.md` — deployment & infra: local Docker workflow, Ansible, container architecture.
