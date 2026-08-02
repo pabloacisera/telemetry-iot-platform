@@ -33,3 +33,4 @@ and Grafana for historical data.
 12. `13-backend-guide.md` — the backend telemetry core: state machines, modules, design decisions.
 13. `14-auth-guide.md` — authentication and authorization: tokens, roles, rate limiting.
 14. `15-frontend-guide.md` — the React dashboard: state management, WebSocket, role gating.
+15. `19-deployment-guide.md` — deployment & infra: local Docker workflow, Ansible, container architecture.
