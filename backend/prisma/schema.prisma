@@ -1,0 +1,207 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================
+// Motors
+// ============================================================
+
+model Motor {
+  id              Int          @id @default(autoincrement())
+  code            String       @unique @db.VarChar(20)
+  name            String       @db.VarChar(100)
+  location        String?      @db.VarChar(100)
+  ratedCurrentA   Float        @map("rated_current_a")
+  insulationClass String       @default("F") @map("insulation_class") @db.VarChar(1)
+  connectionType  String       @map("connection_type") @db.VarChar(4)
+  status          String       @default("healthy") @db.VarChar(30)
+  statusChangedAt DateTime?    @map("status_changed_at")
+  createdAt       DateTime     @default(now()) @map("created_at")
+
+  sensors       MotorSensor[]
+  alerts        Alert[]
+  statusHistory MotorStatusHistory[]
+
+  @@map("motors")
+}
+
+// ============================================================
+// Sensor Standards (seed, not editable from app)
+// ============================================================
+
+model SensorStandard {
+  id                 Int    @id @default(autoincrement())
+  sensorType         String @map("sensor_type") @db.VarChar(20)
+  standardName       String @map("standard_name") @db.VarChar(100)
+  unit               String @db.VarChar(10)
+  plausibleMin       Float  @map("plausible_min")
+  plausibleMax       Float  @map("plausible_max")
+  defaultHealthyMax  Float  @map("default_healthy_max")
+  defaultWarningMax  Float  @map("default_warning_max")
+  defaultCriticalMax Float  @map("default_critical_max")
+  sourceReference    String @map("source_reference") @db.Text
+
+  @@map("sensor_standards")
+}
+
+// ============================================================
+// Motor Sensors (instance per motor)
+// ============================================================
+
+model MotorSensor {
+  id              Int       @id @default(autoincrement())
+  motorId         Int       @map("motor_id")
+  sensorType      String    @map("sensor_type") @db.VarChar(20)
+  healthyMax      Float     @map("healthy_max")
+  warningMax      Float     @map("warning_max")
+  criticalMax     Float     @map("critical_max")
+  status          String    @default("ok") @db.VarChar(30)
+  statusChangedAt DateTime? @map("status_changed_at")
+  lastValue       Float?    @map("last_value")
+  lastReadingAt   DateTime? @map("last_reading_at")
+
+  motor  Motor         @relation(fields: [motorId], references: [id])
+  faults SensorFault[]
+
+  @@unique([motorId, sensorType])
+  @@map("motor_sensors")
+}
+
+// ============================================================
+// Readings (raw, short retention)
+// ============================================================
+
+model Reading {
+  id            BigInt   @id @default(autoincrement())
+  motorSensorId Int      @map("motor_sensor_id")
+  value         Float
+  isAnomalous   Boolean  @default(false) @map("is_anomalous")
+  isImplausible Boolean  @default(false) @map("is_implausible")
+  recordedAt    DateTime @map("recorded_at")
+
+  @@index([motorSensorId, recordedAt])
+  @@map("readings")
+}
+
+// ============================================================
+// Readings Hourly Aggregate (long retention)
+// ============================================================
+
+model ReadingHourlyAgg {
+  id            BigInt   @id @default(autoincrement())
+  motorSensorId Int      @map("motor_sensor_id")
+  hourBucket    DateTime @map("hour_bucket")
+  avgValue      Float?   @map("avg_value")
+  minValue      Float?   @map("min_value")
+  maxValue      Float?   @map("max_value")
+  anomalyCount  Int      @default(0) @map("anomaly_count")
+  faultCount    Int      @default(0) @map("fault_count")
+
+  @@unique([motorSensorId, hourBucket])
+  @@map("readings_hourly_agg")
+}
+
+// ============================================================
+// Alerts (motor-level)
+// ============================================================
+
+model Alert {
+  id             Int       @id @default(autoincrement())
+  motorId        Int       @map("motor_id")
+  type           String    @db.VarChar(40)
+  triggeredAt    DateTime  @map("triggered_at")
+  resolvedAt     DateTime? @map("resolved_at")
+  resolvedBy     Int?      @map("resolved_by")
+  resolutionNote String?   @map("resolution_note") @db.Text
+
+  motor Motor @relation(fields: [motorId], references: [id])
+
+  @@map("alerts")
+}
+
+// ============================================================
+// Sensor Faults (sensor-level)
+// ============================================================
+
+model SensorFault {
+  id              Int       @id @default(autoincrement())
+  motorSensorId   Int       @map("motor_sensor_id")
+  faultType       String    @map("fault_type") @db.VarChar(20)
+  detectedAt      DateTime  @map("detected_at")
+  autoRestartedAt DateTime? @map("auto_restarted_at")
+  resolvedAt      DateTime? @map("resolved_at")
+  status          String    @default("active") @db.VarChar(30)
+
+  motorSensor MotorSensor @relation(fields: [motorSensorId], references: [id])
+
+  @@map("sensor_faults")
+}
+
+// ============================================================
+// Motor Status History (audit trail)
+// ============================================================
+
+model MotorStatusHistory {
+  id         Int       @id @default(autoincrement())
+  motorId    Int       @map("motor_id")
+  fromStatus String?   @map("from_status") @db.VarChar(30)
+  toStatus   String?   @map("to_status") @db.VarChar(30)
+  changedAt  DateTime  @map("changed_at")
+  changedBy  Int?      @map("changed_by")
+
+  motor Motor @relation(fields: [motorId], references: [id])
+
+  @@map("motor_status_history")
+}
+
+// ============================================================
+// Users
+// ============================================================
+
+model User {
+  id           Int    @id @default(autoincrement())
+  email        String @unique @db.VarChar(150)
+  passwordHash String @map("password_hash") @db.VarChar(255)
+  role         String @db.VarChar(20)
+
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+// ============================================================
+// Refresh Tokens
+// ============================================================
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  tokenHash String   @map("token_hash") @db.VarChar(255)
+  expiresAt DateTime @map("expires_at")
+  revoked   Boolean  @default(false)
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("refresh_tokens")
+}
+
+// ============================================================
+// Retention Job Log
+// ============================================================
+
+model RetentionJobLog {
+  id                   Int      @id @default(autoincrement())
+  runAt                DateTime @map("run_at")
+  status               String   @db.VarChar(10)
+  partitionsCreated    Int      @default(0) @map("partitions_created")
+  partitionsAggregated Int      @default(0) @map("partitions_aggregated")
+  partitionsDropped    Int      @default(0) @map("partitions_dropped")
+  error                String?  @db.Text
+
+  @@map("retention_job_log")
+}
