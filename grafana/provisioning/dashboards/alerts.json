@@ -1,0 +1,175 @@
+{
+  "id": null,
+  "uid": "alerts-by-severity",
+  "title": "Alerts by Severity",
+  "tags": ["telemetry", "alerts"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Alerts by Type and Motor (time series)",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT a.triggered_at AS time, CONCAT(m.code, ' — ', a.type) AS metric, 1 AS value FROM alerts a JOIN motors m ON m.id = a.motor_id WHERE a.triggered_at >= $__timeFrom() AND a.triggered_at <= $__timeTo() ORDER BY a.triggered_at",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "drawStyle": "points", "pointSize": 8 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "table", "placement": "right" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Active vs Resolved Alerts Over Time",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 9 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT DATE(a.triggered_at) AS time, 'triggered' AS metric, COUNT(*) AS value FROM alerts a WHERE a.triggered_at >= $__timeFrom() AND a.triggered_at <= $__timeTo() GROUP BY DATE(a.triggered_at) ORDER BY time",
+          "format": "time_series",
+          "refId": "A"
+        },
+        {
+          "rawSql": "SELECT DATE(a.resolved_at) AS time, 'resolved' AS metric, COUNT(*) AS value FROM alerts a WHERE a.resolved_at IS NOT NULL AND a.resolved_at >= $__timeFrom() AND a.resolved_at <= $__timeTo() GROUP BY DATE(a.resolved_at) ORDER BY time",
+          "format": "time_series",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 2, "fillOpacity": 20 }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Alert Count by Type",
+      "type": "piechart",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 9 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT a.type AS metric, COUNT(*) AS value FROM alerts a WHERE a.triggered_at >= $__timeFrom() AND a.triggered_at <= $__timeTo() GROUP BY a.type ORDER BY value DESC",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "right" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Sensor Faults by Type per Motor",
+      "type": "barchart",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 18 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT m.code AS motor, sf.fault_type AS metric, COUNT(*) AS value FROM sensor_faults sf JOIN motor_sensors ms ON ms.id = sf.motor_sensor_id JOIN motors m ON m.id = ms.motor_id WHERE sf.detected_at >= $__timeFrom() AND sf.detected_at <= $__timeTo() GROUP BY m.code, sf.fault_type ORDER BY m.code",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "stacking": { "mode": "normal" },
+        "xField": "motor"
+      }
+    },
+    {
+      "id": 5,
+      "title": "Mean Time to Resolve (hours)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 27 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT AVG(TIMESTAMPDIFF(MINUTE, a.triggered_at, a.resolved_at)) / 60 AS value FROM alerts a WHERE a.resolved_at IS NOT NULL AND a.triggered_at >= $__timeFrom() AND a.triggered_at <= $__timeTo()",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "h",
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 4 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Total Active Alerts (now)",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 27 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM alerts WHERE resolved_at IS NULL",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 3 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Motors Currently Not Healthy",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 27 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT COUNT(*) AS value FROM motors WHERE status != 'healthy'",
+          "format": "table",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 2 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "time": { "from": "now-7d", "to": "now" }
+}
