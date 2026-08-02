@@ -4,6 +4,7 @@ import { AppDispatch, RootState } from '../store';
 import { fetchMotors } from '../store/motors.slice';
 import { MotorGrid } from '../components/motors/MotorGrid';
 import { AlertBanner } from '../components/alerts/AlertBanner';
+import { RagQueryBox } from '../components/rag/RagQueryBox';
 
 /**
  * Main dashboard page — shows the grid of 15 motors and active alerts.
@@ -24,6 +25,7 @@ export function DashboardPage() {
       {loading && <p>Loading motors...</p>}
       {error && <p className="error">{error}</p>}
       <MotorGrid />
+      <RagQueryBox />
     </div>
   );
 }
