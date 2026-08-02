@@ -1,6 +1,6 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { RootState } from '../store';
+import type { RootState } from '../store';
 import { SensorChart } from '../components/motors/SensorChart';
 import { StatusBadge } from '../components/motors/StatusBadge';
 import { RestartCountdown } from '../components/motors/RestartCountdown';
@@ -20,7 +20,7 @@ export function MotorDetailPage() {
   const motor = useSelector((state: RootState) => state.motors.byId[motorId]);
 
   if (!motor) {
-    return <p>Motor not found</p>;
+    return <p>Motor no encontrado</p>;
   }
 
   return (
@@ -30,9 +30,9 @@ export function MotorDetailPage() {
           type="button"
           className="back-button"
           onClick={() => navigate('/dashboard')}
-          aria-label="Back to dashboard"
+          aria-label="Volver al panel"
         >
-          &larr; Back
+          &larr; Volver
         </button>
         <h1>{motor.code} — {motor.name}</h1>
         <StatusBadge status={motor.status} />
@@ -45,10 +45,10 @@ export function MotorDetailPage() {
       <RoleGate minimumRole="operator">
         <div className="motor-controls">
           <button type="button" className="btn-stop" disabled>
-            Stop
+            Detener
           </button>
           <button type="button" className="btn-restart" disabled>
-            Restart
+            Reiniciar
           </button>
         </div>
       </RoleGate>

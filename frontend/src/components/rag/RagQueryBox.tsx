@@ -1,6 +1,7 @@
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { AppDispatch, RootState } from '../../store';
+import type { AppDispatch, RootState } from '../../store';
 import { askRag } from '../../store/rag.slice';
 
 interface RagQueryBoxProps {
@@ -26,27 +27,27 @@ export function RagQueryBox({ motorId }: RagQueryBoxProps) {
 
   return (
     <div className="rag-box">
-      <h3>AI Assistant</h3>
+      <h3>Asistente IA</h3>
       <div className="rag-messages" aria-live="polite">
         {messages.map((msg, i) => (
           <div key={i} className={`rag-message rag-${msg.role}`}>
-            <strong>{msg.role === 'user' ? 'You' : 'Assistant'}:</strong>
+            <strong>{msg.role === 'user' ? 'Tú' : 'Asistente'}:</strong>
             <p>{msg.content}</p>
           </div>
         ))}
-        {loading && <p className="rag-loading">Thinking...</p>}
+        {loading && <p className="rag-loading">Pensando...</p>}
       </div>
       <form onSubmit={handleSubmit} className="rag-form">
         <input
           type="text"
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ask about this motor..."
+          placeholder="Preguntá sobre este motor..."
           disabled={loading}
-          aria-label="Ask the AI assistant"
+          aria-label="Preguntar al asistente IA"
         />
         <button type="submit" disabled={loading || !question.trim()}>
-          Ask
+          Preguntar
         </button>
       </form>
     </div>

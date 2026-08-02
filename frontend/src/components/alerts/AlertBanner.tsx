@@ -1,5 +1,5 @@
 import { useSelector } from 'react-redux';
-import { RootState } from '../../store';
+import type { RootState } from '../../store';
 
 /**
  * Alert banner — shows active (unresolved) alerts at the top of the page.
@@ -13,7 +13,7 @@ export function AlertBanner() {
 
   return (
     <div className="alert-banner" role="alert" aria-live="polite">
-      <h2>Active Alerts ({alerts.length})</h2>
+      <h2>Alertas Activas ({alerts.length})</h2>
       <ul>
         {alerts.slice(0, 5).map((alert) => (
           <li key={alert.id} className={`alert-item alert-${alert.type}`}>

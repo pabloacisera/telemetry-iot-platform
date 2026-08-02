@@ -1,5 +1,6 @@
-import { Middleware, UnknownAction } from '@reduxjs/toolkit';
-import { io, Socket } from 'socket.io-client';
+import type { Middleware, UnknownAction } from '@reduxjs/toolkit';
+import { io } from 'socket.io-client';
+import type { Socket } from 'socket.io-client';
 import {
   telemetryReceived,
   statusChanged,

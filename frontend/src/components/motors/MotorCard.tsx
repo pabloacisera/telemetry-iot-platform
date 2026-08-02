@@ -1,4 +1,5 @@
 import { useNavigate } from 'react-router-dom';
+import type { KeyboardEvent } from 'react';
 import { StatusBadge } from './StatusBadge';
 
 interface MotorCardProps {
@@ -21,7 +22,7 @@ export function MotorCard({ motor }: MotorCardProps) {
   const navigate = useNavigate();
 
   /** Handle keyboard interaction for accessibility (Enter and Space). */
-  function handleKeyDown(e: React.KeyboardEvent) {
+  function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
       navigate(`/motors/${motor.id}`);

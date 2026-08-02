@@ -1,6 +1,6 @@
 import { Navigate, Outlet } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { RootState } from '../../store';
+import type { RootState } from '../../store';
 
 /**
  * Route guard — redirects to /login if user is not authenticated.

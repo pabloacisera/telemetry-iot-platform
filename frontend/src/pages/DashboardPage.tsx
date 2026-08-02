@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { AppDispatch, RootState } from '../store';
+import type { AppDispatch, RootState } from '../store';
 import { fetchMotors } from '../store/motors.slice';
 import { MotorGrid } from '../components/motors/MotorGrid';
 import { AlertBanner } from '../components/alerts/AlertBanner';
@@ -21,8 +21,8 @@ export function DashboardPage() {
   return (
     <div className="dashboard">
       <AlertBanner />
-      <h1>Plant Overview</h1>
-      {loading && <p>Loading motors...</p>}
+      <h1>Vista General de Planta</h1>
+      {loading && <p>Cargando motores...</p>}
       {error && <p className="error">{error}</p>}
       <MotorGrid />
       <RagQueryBox />
