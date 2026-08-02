@@ -1,0 +1,172 @@
+# ACL for IoT Telemetry Platform
+# Each ESP32 can only access topics for its own motor_id
+# Backend has broad read/write across all motors
+# QA injector can only write to qa/ topics
+
+# --- ESP32 devices (one per motor) ---
+
+user esp32_motor1
+topic write plant/motor/1/telemetry
+topic write plant/motor/1/status
+topic write plant/motor/1/restart-progress
+topic read plant/motor/1/cmd
+topic read plant/motor/1/sensor/+/cmd
+topic write plant/motor/1/cmd/ack
+topic write plant/motor/1/sensor/+/cmd/ack
+topic read qa/motor/1/inject-fault
+
+user esp32_motor2
+topic write plant/motor/2/telemetry
+topic write plant/motor/2/status
+topic write plant/motor/2/restart-progress
+topic read plant/motor/2/cmd
+topic read plant/motor/2/sensor/+/cmd
+topic write plant/motor/2/cmd/ack
+topic write plant/motor/2/sensor/+/cmd/ack
+topic read qa/motor/2/inject-fault
+
+user esp32_motor3
+topic write plant/motor/3/telemetry
+topic write plant/motor/3/status
+topic write plant/motor/3/restart-progress
+topic read plant/motor/3/cmd
+topic read plant/motor/3/sensor/+/cmd
+topic write plant/motor/3/cmd/ack
+topic write plant/motor/3/sensor/+/cmd/ack
+topic read qa/motor/3/inject-fault
+
+user esp32_motor4
+topic write plant/motor/4/telemetry
+topic write plant/motor/4/status
+topic write plant/motor/4/restart-progress
+topic read plant/motor/4/cmd
+topic read plant/motor/4/sensor/+/cmd
+topic write plant/motor/4/cmd/ack
+topic write plant/motor/4/sensor/+/cmd/ack
+topic read qa/motor/4/inject-fault
+
+user esp32_motor5
+topic write plant/motor/5/telemetry
+topic write plant/motor/5/status
+topic write plant/motor/5/restart-progress
+topic read plant/motor/5/cmd
+topic read plant/motor/5/sensor/+/cmd
+topic write plant/motor/5/cmd/ack
+topic write plant/motor/5/sensor/+/cmd/ack
+topic read qa/motor/5/inject-fault
+
+user esp32_motor6
+topic write plant/motor/6/telemetry
+topic write plant/motor/6/status
+topic write plant/motor/6/restart-progress
+topic read plant/motor/6/cmd
+topic read plant/motor/6/sensor/+/cmd
+topic write plant/motor/6/cmd/ack
+topic write plant/motor/6/sensor/+/cmd/ack
+topic read qa/motor/6/inject-fault
+
+user esp32_motor7
+topic write plant/motor/7/telemetry
+topic write plant/motor/7/status
+topic write plant/motor/7/restart-progress
+topic read plant/motor/7/cmd
+topic read plant/motor/7/sensor/+/cmd
+topic write plant/motor/7/cmd/ack
+topic write plant/motor/7/sensor/+/cmd/ack
+topic read qa/motor/7/inject-fault
+
+user esp32_motor8
+topic write plant/motor/8/telemetry
+topic write plant/motor/8/status
+topic write plant/motor/8/restart-progress
+topic read plant/motor/8/cmd
+topic read plant/motor/8/sensor/+/cmd
+topic write plant/motor/8/cmd/ack
+topic write plant/motor/8/sensor/+/cmd/ack
+topic read qa/motor/8/inject-fault
+
+user esp32_motor9
+topic write plant/motor/9/telemetry
+topic write plant/motor/9/status
+topic write plant/motor/9/restart-progress
+topic read plant/motor/9/cmd
+topic read plant/motor/9/sensor/+/cmd
+topic write plant/motor/9/cmd/ack
+topic write plant/motor/9/sensor/+/cmd/ack
+topic read qa/motor/9/inject-fault
+
+user esp32_motor10
+topic write plant/motor/10/telemetry
+topic write plant/motor/10/status
+topic write plant/motor/10/restart-progress
+topic read plant/motor/10/cmd
+topic read plant/motor/10/sensor/+/cmd
+topic write plant/motor/10/cmd/ack
+topic write plant/motor/10/sensor/+/cmd/ack
+topic read qa/motor/10/inject-fault
+
+user esp32_motor11
+topic write plant/motor/11/telemetry
+topic write plant/motor/11/status
+topic write plant/motor/11/restart-progress
+topic read plant/motor/11/cmd
+topic read plant/motor/11/sensor/+/cmd
+topic write plant/motor/11/cmd/ack
+topic write plant/motor/11/sensor/+/cmd/ack
+topic read qa/motor/11/inject-fault
+
+user esp32_motor12
+topic write plant/motor/12/telemetry
+topic write plant/motor/12/status
+topic write plant/motor/12/restart-progress
+topic read plant/motor/12/cmd
+topic read plant/motor/12/sensor/+/cmd
+topic write plant/motor/12/cmd/ack
+topic write plant/motor/12/sensor/+/cmd/ack
+topic read qa/motor/12/inject-fault
+
+user esp32_motor13
+topic write plant/motor/13/telemetry
+topic write plant/motor/13/status
+topic write plant/motor/13/restart-progress
+topic read plant/motor/13/cmd
+topic read plant/motor/13/sensor/+/cmd
+topic write plant/motor/13/cmd/ack
+topic write plant/motor/13/sensor/+/cmd/ack
+topic read qa/motor/13/inject-fault
+
+user esp32_motor14
+topic write plant/motor/14/telemetry
+topic write plant/motor/14/status
+topic write plant/motor/14/restart-progress
+topic read plant/motor/14/cmd
+topic read plant/motor/14/sensor/+/cmd
+topic write plant/motor/14/cmd/ack
+topic write plant/motor/14/sensor/+/cmd/ack
+topic read qa/motor/14/inject-fault
+
+user esp32_motor15
+topic write plant/motor/15/telemetry
+topic write plant/motor/15/status
+topic write plant/motor/15/restart-progress
+topic read plant/motor/15/cmd
+topic read plant/motor/15/sensor/+/cmd
+topic write plant/motor/15/cmd/ack
+topic write plant/motor/15/sensor/+/cmd/ack
+topic read qa/motor/15/inject-fault
+
+# --- Backend service ---
+
+user backend_service
+topic read plant/motor/+/telemetry
+topic read plant/motor/+/status
+topic read plant/motor/+/restart-progress
+topic write plant/motor/+/cmd
+topic write plant/motor/+/sensor/+/cmd
+topic read plant/motor/+/cmd/ack
+topic read plant/motor/+/sensor/+/cmd/ack
+
+# --- QA fault injector ---
+
+user qa_fault_injector
+topic write qa/motor/+/inject-fault
