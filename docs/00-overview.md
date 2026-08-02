@@ -34,3 +34,4 @@ and Grafana for historical data.
 13. `14-auth-guide.md` — authentication and authorization: tokens, roles, rate limiting.
 14. `15-frontend-guide.md` — the React dashboard: state management, WebSocket, role gating.
 15. `16-rag-guide.md` — the RAG module: live context, knowledge base, anti-hallucination, Groq LLM.
+16. `17-grafana-guide.md` — Grafana observability: provisioned dashboards, historical queries, alerts panel.

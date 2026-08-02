@@ -1,0 +1,15 @@
+# Grafana datasource provisioning — auto-configures MySQL on container boot.
+# No manual UI setup needed. See docs/17-grafana-guide.md.
+apiVersion: 1
+
+datasources:
+  - name: MySQL-Telemetry
+    type: mysql
+    access: proxy
+    url: ${MYSQL_HOST}:${MYSQL_PORT}
+    database: ${MYSQL_DATABASE}
+    user: ${MYSQL_GRAFANA_USER}
+    secureJsonData:
+      password: ${MYSQL_GRAFANA_PASSWORD}
+    isDefault: true
+    editable: false

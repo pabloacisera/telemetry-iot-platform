@@ -1,0 +1,116 @@
+{
+  "id": null,
+  "uid": "historical-per-motor",
+  "title": "Historical per Motor",
+  "tags": ["telemetry", "motors"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "1m",
+  "templating": {
+    "list": [
+      {
+        "name": "motor_id",
+        "type": "query",
+        "datasource": "MySQL-Telemetry",
+        "query": "SELECT id AS __value, CONCAT(code, ' — ', name) AS __text FROM motors ORDER BY id",
+        "refresh": 1,
+        "current": {},
+        "multi": false,
+        "includeAll": false,
+        "label": "Motor"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Average Sensor Values per Hour",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 0 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT h.hour_bucket AS time, ms.sensor_type AS metric, h.avg_value AS value FROM readings_hourly_agg h JOIN motor_sensors ms ON ms.id = h.motor_sensor_id WHERE ms.motor_id = ${motor_id} AND h.hour_bucket >= $__timeFrom() AND h.hour_bucket <= $__timeTo() ORDER BY h.hour_bucket",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 2, "fillOpacity": 10 }
+        }
+      },
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Min / Max Range per Hour",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 9 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT h.hour_bucket AS time, CONCAT(ms.sensor_type, ' min') AS metric, h.min_value AS value FROM readings_hourly_agg h JOIN motor_sensors ms ON ms.id = h.motor_sensor_id WHERE ms.motor_id = ${motor_id} AND h.hour_bucket >= $__timeFrom() AND h.hour_bucket <= $__timeTo() ORDER BY h.hour_bucket",
+          "format": "time_series",
+          "refId": "A"
+        },
+        {
+          "rawSql": "SELECT h.hour_bucket AS time, CONCAT(ms.sensor_type, ' max') AS metric, h.max_value AS value FROM readings_hourly_agg h JOIN motor_sensors ms ON ms.id = h.motor_sensor_id WHERE ms.motor_id = ${motor_id} AND h.hour_bucket >= $__timeFrom() AND h.hour_bucket <= $__timeTo() ORDER BY h.hour_bucket",
+          "format": "time_series",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 1, "fillOpacity": 5, "lineStyle": { "dash": [5, 5] } }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Anomaly Count per Hour",
+      "type": "barchart",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 18 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT h.hour_bucket AS time, ms.sensor_type AS metric, h.anomaly_count AS value FROM readings_hourly_agg h JOIN motor_sensors ms ON ms.id = h.motor_sensor_id WHERE ms.motor_id = ${motor_id} AND h.hour_bucket >= $__timeFrom() AND h.hour_bucket <= $__timeTo() ORDER BY h.hour_bucket",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "options": {
+        "stacking": { "mode": "normal" }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Recent Raw Readings (last 3 days)",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 26 },
+      "datasource": "MySQL-Telemetry",
+      "targets": [
+        {
+          "rawSql": "SELECT r.recorded_at AS time, ms.sensor_type AS metric, r.value FROM readings r JOIN motor_sensors ms ON ms.id = r.motor_sensor_id WHERE ms.motor_id = ${motor_id} AND r.recorded_at >= DATE_SUB(NOW(), INTERVAL 3 DAY) AND r.recorded_at >= $__timeFrom() AND r.recorded_at <= $__timeTo() ORDER BY r.recorded_at",
+          "format": "time_series",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "lineWidth": 1, "fillOpacity": 0, "pointSize": 3, "showPoints": "auto" }
+        }
+      },
+      "description": "Queries the raw readings table (3-day retention). For longer history, use the hourly aggregate panels above."
+    }
+  ],
+  "time": { "from": "now-24h", "to": "now" }
+}
