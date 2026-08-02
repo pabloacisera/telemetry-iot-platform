@@ -8,6 +8,7 @@ import { TelemetryModule } from './telemetry';
 import { CommandModule } from './command/command.module';
 import { MotorsModule } from './motors';
 import { AlertsModule } from './alerts';
+import { AuthModule } from './auth';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AlertsModule } from './alerts';
     TelemetryModule,
     MotorsModule,
     AlertsModule,
+    AuthModule,
   ],
 })
 export class AppModule {}
