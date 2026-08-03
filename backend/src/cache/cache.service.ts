@@ -117,14 +117,10 @@ export class CacheService implements OnModuleDestroy {
   // State persistence — survives process restarts
   // ===================================================================
 
-  /** Persist a motor's sliding window (array of booleans per sensor). */
-  async persistWindow(motorSensorId: number, window: boolean[]): Promise<void> {
-    const key = `state:window:${motorSensorId}`;
-    const value = JSON.stringify(window);
-    await this.redis.set(key, value, 'EX', 600); // TTL 10 min (window ~2 min of readings)
-  }
+  /** @deprecated Use pushToWindow instead. Kept only for restoreWindows compatibility. */
+  // persistWindow removed — was storing as string, conflicting with list-based pushToWindow.
 
-  /** Restore all sliding windows from Redis. */
+  /** Restore all sliding windows from Redis (list-based). */
   async restoreWindows(): Promise<Map<number, boolean[]>> {
     const keys = await this.redis.keys('state:window:*');
     const result = new Map<number, boolean[]>();
@@ -132,7 +128,7 @@ export class CacheService implements OnModuleDestroy {
 
     const pipeline = this.redis.pipeline();
     for (const key of keys) {
-      pipeline.get(key);
+      pipeline.lrange(key, 0, -1);
     }
     const responses = await pipeline.exec();
     if (!responses) return result;
@@ -140,9 +136,9 @@ export class CacheService implements OnModuleDestroy {
     for (let i = 0; i < keys.length; i++) {
       const idMatch = keys[i].match(/state:window:(\d+)/);
       if (!idMatch) continue;
-      const [err, value] = responses[i] as [Error | null, string | null];
-      if (err || !value) continue;
-      result.set(parseInt(idMatch[1], 10), JSON.parse(value));
+      const [err, values] = responses[i] as [Error | null, string[] | null];
+      if (err || !values) continue;
+      result.set(parseInt(idMatch[1], 10), values.map((v) => v === '1'));
     }
     return result;
   }
@@ -291,6 +287,11 @@ export class CacheService implements OnModuleDestroy {
   /** Push a reading to a sensor's sliding window (atomic, max 8 elements). */
   async pushToWindow(motorSensorId: number, isAnomalous: boolean): Promise<boolean[]> {
     const key = `state:window:${motorSensorId}`;
+    // Guard: if key exists as wrong type (legacy string), delete it first
+    const type = await this.redis.type(key);
+    if (type !== 'none' && type !== 'list') {
+      await this.redis.del(key);
+    }
     await this.redis.rpush(key, isAnomalous ? '1' : '0');
     await this.redis.ltrim(key, -8, -1);
     await this.redis.expire(key, 600);
