@@ -1,4 +1,4 @@
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import type { RootState, AppDispatch } from '../store';
@@ -7,14 +7,10 @@ import { clearConversation } from '../store/rag.slice';
 import { fetchMotorDetail } from '../store/motors.slice';
 import { api } from '../services/api';
 import { StatusBadge } from '../components/motors/StatusBadge';
+import { SensorChart } from '../components/motors/SensorChart';
 import { RestartCountdown } from '../components/motors/RestartCountdown';
 import { RagQueryBox } from '../components/rag/RagQueryBox';
 import { RoleGate } from '../components/routes/RoleGate';
-import { LoadingSpinner } from '../components/LoadingSpinner';
-
-const SensorChart = lazy(() =>
-  import('../components/motors/SensorChart').then((m) => ({ default: m.SensorChart }))
-);
 
 /**
  * Motor detail page — shows 3 real-time charts (one per sensor).
@@ -26,9 +22,9 @@ export function MotorDetailPage() {
   const dispatch = useDispatch<AppDispatch>();
   const motorId = Number(id);
   const motor = useSelector((state: RootState) => state.motors.byId[motorId]);
+  const detailLoading = useSelector((state: RootState) => state.motors.detailLoading);
   const [cmdLoading, setCmdLoading] = useState(false);
 
-  // Join/leave motor room for targeted WebSocket events
   useEffect(() => {
     dispatch(clearConversation());
     dispatch(fetchMotorDetail(motorId));
@@ -58,8 +54,17 @@ export function MotorDetailPage() {
     setCmdLoading(false);
   };
 
+  // Motor not in store yet (first navigation without prior dashboard load)
   if (!motor) {
-    return <LoadingSpinner message="Cargando motor..." />;
+    return (
+      <div className="motor-detail">
+        <div className="sensor-charts">
+          <div className="chart-skeleton" aria-hidden="true" />
+          <div className="chart-skeleton" aria-hidden="true" />
+          <div className="chart-skeleton" aria-hidden="true" />
+        </div>
+      </div>
+    );
   }
 
   const isRestarting = motor.status === 'restarting' || motor.status === 'shutting_down';
@@ -120,15 +125,22 @@ export function MotorDetailPage() {
         </div>
       </RoleGate>
 
-      <Suspense fallback={<LoadingSpinner message="Cargando gráficos..." />}>
+      {detailLoading ? (
+        <div className="sensor-charts">
+          <div className="chart-skeleton" aria-hidden="true" />
+          <div className="chart-skeleton" aria-hidden="true" />
+          <div className="chart-skeleton" aria-hidden="true" />
+        </div>
+      ) : (
         <div className="sensor-charts">
           {Object.entries(motor.sensors).map(([type, sensor]) => (
             <SensorChart key={type} sensor={sensor} sensorType={type} />
           ))}
         </div>
-      </Suspense>
+      )}
 
       <RagQueryBox motorId={motorId} />
     </div>
   );
 }
+

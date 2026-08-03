@@ -23,7 +23,10 @@ const LABELS: Record<string, string> = {
 /** Format time to HH:MM:SS */
 function formatTime(isoString: string): string {
   const d = new Date(isoString);
-  return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const s = d.getSeconds().toString().padStart(2, '0');
+  return `${h}:${m}:${s}`;
 }
 
 /**
@@ -49,15 +52,13 @@ export function SensorChart({ sensor, sensorType }: SensorChartProps) {
       {data.length < 3 ? (
         <p className="chart-empty">Esperando datos...</p>
       ) : (
-        <ResponsiveContainer width="100%" height={200}>
-          <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+        <ResponsiveContainer width="100%" height={220}>
+          <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
             <XAxis
               dataKey="time"
-              tick={{ fontSize: 10 }}
+              tick={{ fontSize: 11 }}
               interval={tickInterval}
-              angle={-30}
-              textAnchor="end"
-              height={40}
+              height={30}
             />
             <YAxis domain={['auto', 'auto']} width={45} />
             <Tooltip />
