@@ -87,8 +87,7 @@ class MotorSimulator:
                     username=self.config.mqtt_user,
                     password=self.config.mqtt_pass,
                     will=lwt,
-                    clean_session=False,
-                    client_id=f"esp32_motor{self.motor_id}",
+                    identifier=f"esp32_motor{self.motor_id}",
                 ) as client:
                     logger.info(f"Motor {self.motor_id}: connected")
                     await self._publish_status(client, "online")

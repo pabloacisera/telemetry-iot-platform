@@ -26,7 +26,7 @@ export class RetentionService {
    * 1. Aggregate the previous hour's readings into hourly buckets.
    * 2. Purge raw readings older than retentionDays.
    */
-  @Cron('5 * * * *') // minute 5 of every hour
+  @Cron('5 * * * *', { name: 'retention-job' }) // minute 5 of every hour
   async handleRetention(): Promise<void> {
     const runAt = new Date();
     this.logger.log('Retention job started');

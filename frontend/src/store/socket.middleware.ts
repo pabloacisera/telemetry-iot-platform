@@ -45,10 +45,13 @@ interface RestartProgressEvent {
  * Socket middleware — the ONLY translator of WebSocket events into Redux actions.
  *
  * Lifecycle:
- * 1. On login success (auth/login/fulfilled) → opens connection.
+ * 1. On login/refresh success → opens connection.
  * 2. On each WS event → dispatches to the appropriate slice.
  * 3. On disconnect → auto-reconnect + refetch REST snapshot.
  * 4. On logout → closes connection.
+ *
+ * Room management:
+ * - 'join-motor' / 'leave-motor' actions from components trigger room subscriptions.
  *
  * Components NEVER interact with the socket directly.
  */
@@ -115,15 +118,40 @@ export const socketMiddleware: Middleware = (storeAPI) => {
 
   return (next) => (action: UnknownAction) => {
     const result = next(action);
+    const type = (action as UnknownAction & { type?: string }).type;
 
-    if ((action as UnknownAction & { type?: string }).type === 'auth/login/fulfilled') {
+    // Connect on login or successful refresh
+    if (type === 'auth/login/fulfilled' || type === 'auth/refresh/fulfilled') {
       connectSocket();
     }
 
-    if ((action as UnknownAction & { type?: string }).type === 'auth/logout') {
+    // Disconnect on logout
+    if (type === 'auth/logout') {
       disconnectSocket();
+    }
+
+    // Room management for motor detail page
+    if (type === 'socket/joinMotor' && socket) {
+      const motorId = (action as any).payload;
+      socket.emit('join-motor', motorId);
+    }
+
+    if (type === 'socket/leaveMotor' && socket) {
+      const motorId = (action as any).payload;
+      socket.emit('leave-motor', motorId);
     }
 
     return result;
   };
 };
+
+/** Action creators for room management (used by MotorDetailPage). */
+export const joinMotorRoom = (motorId: number) => ({
+  type: 'socket/joinMotor',
+  payload: motorId,
+});
+
+export const leaveMotorRoom = (motorId: number) => ({
+  type: 'socket/leaveMotor',
+  payload: motorId,
+});
