@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { KeyboardEvent } from 'react';
 import { StatusBadge } from './StatusBadge';
@@ -15,13 +16,11 @@ interface MotorCardProps {
 
 /**
  * Single motor card for the grid view.
- * Shows identification, status badge, and last value of each sensor.
- * Clicking or pressing Enter/Space navigates to the detail page.
+ * Memoized to avoid re-rendering when other motors receive telemetry.
  */
-export function MotorCard({ motor }: MotorCardProps) {
+export const MotorCard = memo(function MotorCard({ motor }: MotorCardProps) {
   const navigate = useNavigate();
 
-  /** Handle keyboard interaction for accessibility (Enter and Space). */
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -36,7 +35,7 @@ export function MotorCard({ motor }: MotorCardProps) {
       onKeyDown={handleKeyDown}
       role="button"
       tabIndex={0}
-      aria-label={`View details for ${motor.code}`}
+      aria-label={`Ver detalle de ${motor.code}`}
     >
       <div className="card-header">
         <strong>{motor.code}</strong>
@@ -54,4 +53,4 @@ export function MotorCard({ motor }: MotorCardProps) {
       </div>
     </div>
   );
-}
+});

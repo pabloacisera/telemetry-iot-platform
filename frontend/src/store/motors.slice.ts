@@ -53,13 +53,17 @@ export interface MotorData {
 
 interface MotorsState {
   byId: Record<number, MotorData>;
+  initialized: boolean;
   loading: boolean;
+  detailLoading: boolean;
   error: string | null;
 }
 
 const initialState: MotorsState = {
   byId: {},
+  initialized: false,
   loading: false,
+  detailLoading: false,
   error: null,
 };
 
@@ -128,7 +132,6 @@ export const motorsSlice = createSlice({
 
       if (toStatus) {
         motor.status = toStatus;
-        // Clear countdown when motor leaves restarting state
         if (toStatus !== 'restarting') {
           motor.restartSecondsRemaining = null;
         }
@@ -158,15 +161,22 @@ export const motorsSlice = createSlice({
       })
       .addCase(fetchMotors.fulfilled, (state, action) => {
         state.loading = false;
+        state.initialized = true;
         for (const motor of action.payload) {
+          const existing = state.byId[motor.id];
           const sensors: Record<string, SensorData> = {};
           for (const s of motor.sensors) {
-            sensors[s.sensorType] = { ...s, recentValues: [] };
+            // Preserve existing recentValues from WebSocket if available
+            const existingSensor = existing?.sensors[s.sensorType];
+            sensors[s.sensorType] = {
+              ...s,
+              recentValues: existingSensor?.recentValues.length ? existingSensor.recentValues : [],
+            };
           }
           state.byId[motor.id] = {
             ...motor,
             sensors,
-            restartSecondsRemaining: null,
+            restartSecondsRemaining: existing?.restartSecondsRemaining ?? null,
           };
         }
       })
@@ -174,21 +184,40 @@ export const motorsSlice = createSlice({
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch motors';
       })
+      .addCase(fetchMotorDetail.pending, (state) => {
+        state.detailLoading = true;
+      })
       .addCase(fetchMotorDetail.fulfilled, (state, action) => {
+        state.detailLoading = false;
         const motor = action.payload;
+        const existing = state.byId[motor.id];
         const sensors: Record<string, SensorData> = {};
         for (const s of motor.sensors) {
+          const existingSensor = existing?.sensors[s.sensorType];
+          const apiValues = s.recentValues || [];
+          const existingValues = existingSensor?.recentValues || [];
+          // Merge: use API snapshot as base, append any WS points that arrived after
+          let merged = apiValues;
+          if (existingValues.length > 0 && apiValues.length > 0) {
+            const lastApiTs = apiValues[apiValues.length - 1].timestamp;
+            const newer = existingValues.filter(v => v.timestamp > lastApiTs);
+            merged = [...apiValues, ...newer].slice(-50);
+          } else if (existingValues.length > 0) {
+            merged = existingValues;
+          }
           sensors[s.sensorType] = {
             ...s,
-            recentValues: s.recentValues || [],
+            recentValues: merged,
           };
         }
-        const existing = state.byId[motor.id];
         state.byId[motor.id] = {
           ...motor,
           sensors,
           restartSecondsRemaining: existing?.restartSecondsRemaining ?? null,
         };
+      })
+      .addCase(fetchMotorDetail.rejected, (state) => {
+        state.detailLoading = false;
       });
   },
 });

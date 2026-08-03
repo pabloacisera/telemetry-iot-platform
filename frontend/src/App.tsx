@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useSelector, useDispatch } from 'react-redux';
 import type { RootState, AppDispatch } from './store';
@@ -11,15 +11,16 @@ import { ProtectedRoute } from './components/routes/ProtectedRoute';
 
 /**
  * Root application component.
- * On mount, attempts to restore session via refresh token (httpOnly cookie).
+ * Attempts a single refresh on mount. ProtectedRoute handles the gate.
  */
 function App() {
   const dispatch = useDispatch<AppDispatch>();
-  const user = useSelector((state: RootState) => state.auth.user);
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
+  const attempted = useRef(false);
 
   useEffect(() => {
-    if (!accessToken) {
+    if (!accessToken && !attempted.current) {
+      attempted.current = true;
       dispatch(refreshToken());
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -27,10 +28,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
-        <Route
-          path="/login"
-          element={user ? <Navigate to="/dashboard" /> : <LoginPage />}
-        />
+        <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/motors/:id" element={<MotorDetailPage />} />

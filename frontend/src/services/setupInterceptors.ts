@@ -7,8 +7,6 @@ import { refreshToken, logout } from '../store/auth.slice';
  *
  * Must be called once from main.tsx after the Redux store is created,
  * breaking the circular import between store and api.
- *
- * @param store - the configured Redux store
  */
 export function setupInterceptors(store: Store): void {
   api.interceptors.request.use((config) => {
@@ -24,6 +22,12 @@ export function setupInterceptors(store: Store): void {
     (response) => response,
     async (error) => {
       const originalRequest = error.config;
+
+      // Don't intercept auth endpoints — they handle their own errors
+      const isAuthUrl = originalRequest?.url?.includes('/auth/');
+      if (isAuthUrl) {
+        return Promise.reject(error);
+      }
 
       if (error.response?.status === 401 && !originalRequest._retry) {
         originalRequest._retry = true;

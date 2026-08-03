@@ -5,19 +5,21 @@ import type { AppDispatch, RootState } from '../store';
 import { fetchMotors } from '../store/motors.slice';
 import { MotorGrid } from '../components/motors/MotorGrid';
 import { AlertBanner } from '../components/alerts/AlertBanner';
-import { LoadingSpinner } from '../components/LoadingSpinner';
 
 /**
  * Main dashboard page — shows the grid of 15 motors and active alerts.
- * Fetches initial snapshot on mount, then receives WebSocket updates.
+ * Waits for auth token before fetching. Shows skeleton until data arrives.
  */
 export function DashboardPage() {
   const dispatch = useDispatch<AppDispatch>();
-  const { loading, error } = useSelector((state: RootState) => state.motors);
+  const { initialized } = useSelector((state: RootState) => state.motors);
+  const accessToken = useSelector((state: RootState) => state.auth.accessToken);
 
   useEffect(() => {
-    dispatch(fetchMotors());
-  }, [dispatch]);
+    if (accessToken && !initialized) {
+      dispatch(fetchMotors());
+    }
+  }, [dispatch, initialized, accessToken]);
 
   return (
     <div className="dashboard">
@@ -28,9 +30,22 @@ export function DashboardPage() {
           📋 Referencia de estados
         </Link>
       </div>
-      {loading && <LoadingSpinner message="Cargando motores..." />}
-      {error && <p className="error">{error}</p>}
-      {!loading && <MotorGrid />}
+      {!initialized ? <DashboardSkeleton /> : <MotorGrid />}
+    </div>
+  );
+}
+
+/** Skeleton grid matching the 15-card layout. */
+function DashboardSkeleton() {
+  return (
+    <div className="motor-grid">
+      {Array.from({ length: 15 }, (_, i) => (
+        <div key={i} className="motor-card-skeleton" aria-hidden="true">
+          <div className="skel-line skel-title" />
+          <div className="skel-line skel-subtitle" />
+          <div className="skel-line skel-sensors" />
+        </div>
+      ))}
     </div>
   );
 }

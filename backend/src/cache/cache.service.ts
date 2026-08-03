@@ -69,27 +69,36 @@ export class CacheService implements OnModuleDestroy {
     };
   }
 
-  /** Get all snapshots (for initial grid load). */
+  /** Get all snapshots (for initial grid load). Uses pipeline for single roundtrip. */
   async getAllSnapshots(): Promise<
     Map<number, { value: number; status: string; recordedAt: string }>
   > {
     const keys = await this.redis.keys('motor_sensor:*:last');
     const result = new Map();
 
+    if (keys.length === 0) return result;
+
+    // Single pipeline: fetch all hashes in one roundtrip
+    const pipeline = this.redis.pipeline();
     for (const key of keys) {
-      const idMatch = key.match(/motor_sensor:(\d+):last/);
+      pipeline.hgetall(key);
+    }
+    const responses = await pipeline.exec();
+
+    if (!responses) return result;
+
+    for (let i = 0; i < keys.length; i++) {
+      const idMatch = keys[i].match(/motor_sensor:(\d+):last/);
       if (!idMatch) continue;
 
-      const id = parseInt(idMatch[1], 10);
-      const data = await this.redis.hgetall(key);
+      const [err, data] = responses[i] as [Error | null, Record<string, string>];
+      if (err || !data || !data.value) continue;
 
-      if (data && data.value) {
-        result.set(id, {
-          value: parseFloat(data.value),
-          status: data.status,
-          recordedAt: data.recorded_at,
-        });
-      }
+      result.set(parseInt(idMatch[1], 10), {
+        value: parseFloat(data.value),
+        status: data.status,
+        recordedAt: data.recorded_at,
+      });
     }
 
     return result;

@@ -100,7 +100,7 @@ export class RagQueryService {
     // Step 3: Check if this is a historical question
     if (this.isHistoricalQuestion(question) && !knowledgeResults.length) {
       return {
-        answer: `Para datos históricos y tendencias te recomiendo consultar el panel de Grafana, que tiene acceso a las lecturas agregadas por hora. Yo solo puedo responder sobre el estado actual de la planta.`,
+        answer: `Esa pregunta requiere datos de más de 4 horas de antigüedad. Para consultar históricos, tendencias y gráficos avanzados, accedé a Grafana: http://localhost:4002 (usuario: admin). Ahí podés ver dashboards con datos agregados por hora de todos los motores y sensores.`,
         sources: [],
         warnings,
       };
@@ -166,7 +166,9 @@ REGLAS DE RECOMENDACIÓN POR ESTADO:
 - Si el motor está "Reiniciando": indicar que debe esperar los 100 segundos del ciclo anti-cortocircuito.
 - Si el motor está "Parada manual": indicar que fue detenido por un operador y puede reiniciarse cuando se considere seguro.
 
-LÓGICA DE DETECCIÓN: el sistema marca un motor "En revisión" cuando detecta 5 de las últimas 8 lecturas en zona de advertencia, O una sola lectura en zona crítica. Aunque el valor ACTUAL pueda parecer normal, el historial reciente tuvo anomalías. Esto es importante — no digas que "todo está bien" si el motor está en revisión.`;
+LÓGICA DE DETECCIÓN: el sistema marca un motor "En revisión" cuando detecta 5 de las últimas 8 lecturas en zona de advertencia, O una sola lectura en zona crítica. Aunque el valor ACTUAL pueda parecer normal, el historial reciente tuvo anomalías. Esto es importante — no digas que "todo está bien" si el motor está en revisión.
+
+DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 horas (desde MySQL). Si el operario pregunta por los últimos minutos/horas, podés responder con los datos que ves en el contexto. Si pregunta por más de 4 horas (ayer, semana pasada, etc.), redirigilo a Grafana: http://localhost:4002 (usuario: admin).`;
 
     if (faultSensors.length > 0) {
       prompt += `\n\nCRÍTICO: Los siguientes sensores están en FALLA — sus valores NO son confiables y NO deben citarse como hechos: ${faultSensors.join(', ')}.`;
@@ -272,18 +274,17 @@ LÓGICA DE DETECCIÓN: el sistema marca un motor "En revisión" cuando detecta 5
     return filtered;
   }
 
-  /** Detect if a question is asking about deep history. */
+  /** Detect if a question is asking about deep history (>4 hours). */
   private isHistoricalQuestion(question: string): boolean {
     const historicalPatterns = [
       /last\s+(week|month|year)/i,
       /semana\s+pasada/i,
       /mes\s+pasado/i,
-      /histor(y|ical|ico|ia)/i,
-      /trend(s)?/i,
-      /tendencia/i,
-      /over\s+time/i,
-      /hace\s+\d+\s+(días|horas|semanas)/i,
+      /año\s+pasado/i,
+      /hace\s+\d+\s+(días|semanas|meses)/i,
       /\d+\s+(days?|weeks?|months?)\s+ago/i,
+      /ayer/i,
+      /la\s+semana\s+anterior/i,
     ];
 
     return historicalPatterns.some((pattern) => pattern.test(question));

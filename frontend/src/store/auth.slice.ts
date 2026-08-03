@@ -6,6 +6,7 @@ interface AuthState {
   user: { userId: number; email: string; role: string } | null;
   accessToken: string | null;
   loading: boolean;
+  refreshAttempted: boolean;
   error: string | null;
 }
 
@@ -13,6 +14,7 @@ const initialState: AuthState = {
   user: null,
   accessToken: null,
   loading: false,
+  refreshAttempted: false,
   error: null,
 };
 
@@ -100,11 +102,8 @@ export const authSlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       })
-      .addCase(refreshToken.pending, (state) => {
-        state.loading = true;
-      })
       .addCase(refreshToken.fulfilled, (state, action) => {
-        state.loading = false;
+        state.refreshAttempted = true;
         state.accessToken = action.payload.accessToken;
         const payload = decodeJwtPayload(action.payload.accessToken);
         if (payload) {
@@ -112,7 +111,7 @@ export const authSlice = createSlice({
         }
       })
       .addCase(refreshToken.rejected, (state) => {
-        state.loading = false;
+        state.refreshAttempted = true;
         state.user = null;
         state.accessToken = null;
       });
