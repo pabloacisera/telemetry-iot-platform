@@ -1,5 +1,12 @@
 # Sprint — 2026-08-03
 
+## Completados hoy
+
+- [x] **ERR-001: Pool de conexiones Prisma agotado** — Buffer de escrituras con `createMany` + pool ampliado a 20 conexiones.
+- [x] **Skeleton de carga al abrir motor** — Se muestran placeholders animados mientras se cargan los datos de los charts (en lugar de una pantalla vacía o un mensaje genérico).
+- [x] **Formato de hora en charts corregido** — Se muestra HH:MM:SS completo sin rotación ni recorte. Se eliminó el `angle={-30}` que cortaba las etiquetas.
+- [x] **Documentación de troubleshooting** — `docs/22-troubleshooting.md` con registro histórico de 10 errores y sus soluciones.
+
 ## Pendientes para hoy
 
 1. **Recuperación automática del motor**
