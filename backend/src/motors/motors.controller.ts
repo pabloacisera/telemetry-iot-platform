@@ -5,6 +5,7 @@ import {
   Param,
   ParseIntPipe,
   NotFoundException,
+  BadRequestException,
   UseGuards,
   Req,
 } from '@nestjs/common';
@@ -14,6 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 import { CommandService } from '../command/command.service';
+import { SensorEvaluationService } from '../telemetry/sensor-evaluation.service';
 
 /**
  * REST endpoints for motor data and commands.
@@ -25,6 +27,7 @@ export class MotorsController {
   constructor(
     private readonly motorsService: MotorsService,
     private readonly commandService: CommandService,
+    private readonly sensorEvaluation: SensorEvaluationService,
   ) {}
 
   /** Get all motors with live sensor data (for grid view). */
@@ -61,5 +64,20 @@ export class MotorsController {
     const user = (req as any).user;
     const requestId = await this.commandService.publishRestart(id, user.email);
     return { message: 'Comando de reinicio enviado', requestId };
+  }
+
+  /** Manually restart a sensor in fault/fault_persistent (operator/admin only). */
+  @Post(':id/sensors/:sensorId/restart')
+  @UseGuards(RolesGuard)
+  @Roles('admin', 'operator')
+  async restartSensor(
+    @Param('id', ParseIntPipe) _motorId: number,
+    @Param('sensorId', ParseIntPipe) sensorId: number,
+  ) {
+    const success = await this.sensorEvaluation.manualRestart(sensorId);
+    if (!success) {
+      throw new BadRequestException('El sensor no está en estado de falla');
+    }
+    return { message: 'Sensor reiniciado manualmente' };
   }
 }

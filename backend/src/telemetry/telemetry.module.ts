@@ -20,6 +20,6 @@ import { CommandModule } from '../command/command.module';
     StatusTransitionService,
     RetentionService,
   ],
-  exports: [TelemetryEvaluationService, StatusTransitionService],
+  exports: [TelemetryEvaluationService, SensorEvaluationService, StatusTransitionService],
 })
 export class TelemetryModule {}
