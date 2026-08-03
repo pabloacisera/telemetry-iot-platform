@@ -3,22 +3,22 @@ import { useSelector } from 'react-redux';
 import type { RootState } from '../../store';
 
 /**
- * Route guard — redirects to /login if user is not authenticated
- * AND the refresh attempt has already completed (or failed).
- * Shows nothing while a refresh is in progress (avoids flash to login).
+ * Route guard:
+ * - User exists → render protected content.
+ * - Refresh not attempted yet → show nothing (blank, <100ms in production).
+ * - Refresh attempted, no user → redirect to login.
  */
 export function ProtectedRoute() {
   const user = useSelector((state: RootState) => state.auth.user);
-  const loading = useSelector((state: RootState) => state.auth.loading);
+  const refreshAttempted = useSelector((state: RootState) => state.auth.refreshAttempted);
 
-  // While refresh is in progress, don't redirect yet
-  if (!user && loading) {
+  if (user) {
+    return <Outlet />;
+  }
+
+  if (!refreshAttempted) {
     return null;
   }
 
-  if (!user) {
-    return <Navigate to="/login" replace />;
-  }
-
-  return <Outlet />;
+  return <Navigate to="/login" replace />;
 }
