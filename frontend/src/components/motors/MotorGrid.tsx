@@ -1,19 +1,29 @@
+import { useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import type { RootState } from '../../store';
 import { MotorCard } from './MotorCard';
 
 /**
- * Grid view of all 15 motors.
- * Each card shows: code, location, status badge, last sensor values.
+ * Grid view of all motors.
+ * Uses a stable list of motor IDs to avoid re-rendering the grid container
+ * when individual motor data changes — only the affected MotorCard updates.
  */
 export function MotorGrid() {
-  const motors = useSelector((state: RootState) => state.motors.byId);
+  const motorsById = useSelector((state: RootState) => state.motors.byId);
+  const motorIds = useMemo(() => Object.keys(motorsById).map(Number), [motorsById]);
 
   return (
     <div className="motor-grid">
-      {Object.values(motors).map((motor) => (
-        <MotorCard key={motor.id} motor={motor} />
+      {motorIds.map((id) => (
+        <MotorCardWrapper key={id} motorId={id} />
       ))}
     </div>
   );
+}
+
+/** Wrapper that selects a single motor — isolates re-renders to the individual card. */
+function MotorCardWrapper({ motorId }: { motorId: number }) {
+  const motor = useSelector((state: RootState) => state.motors.byId[motorId]);
+  if (!motor) return null;
+  return <MotorCard motor={motor} />;
 }
