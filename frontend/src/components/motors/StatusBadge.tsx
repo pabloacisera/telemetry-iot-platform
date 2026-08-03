@@ -2,17 +2,24 @@ interface StatusBadgeProps {
   status: string;
 }
 
-/** Visual badge mapping status → color for motors and sensors. */
+/**
+ * ISA-101 compliant color mapping:
+ * - Normal states: neutral grays (don't compete with alarms)
+ * - Alarm states only: saturated colors (immediate visual urgency)
+ */
 const STATUS_COLORS: Record<string, string> = {
-  healthy: '#22c55e',
-  ok: '#22c55e',
-  under_review: '#f59e0b',
-  shutting_down: '#ef4444',
-  restarting: '#3b82f6',
-  disabled: '#6b7280',
-  manual_shutdown: '#6b7280',
-  fault: '#ef4444',
-  fault_persistent: '#991b1b',
+  // Normal / operational — neutral
+  healthy: '#6b7280',       // gray
+  ok: '#6b7280',            // gray
+  manual_shutdown: '#6b7280', // gray
+
+  // Alarm states — saturated
+  under_review: '#f59e0b',  // amber (warning)
+  shutting_down: '#ef4444', // red (critical action)
+  restarting: '#3b82f6',    // blue (informational action)
+  disabled: '#991b1b',      // dark red (requires intervention)
+  fault: '#ef4444',         // red (sensor fault)
+  fault_persistent: '#991b1b', // dark red (persistent fault)
 };
 
 /** Status labels in Spanish. */
@@ -28,18 +35,32 @@ const STATUS_LABELS: Record<string, string> = {
   fault_persistent: 'Falla persistente',
 };
 
+/** Status icons for accessibility (not only color). */
+const STATUS_ICONS: Record<string, string> = {
+  healthy: '●',
+  ok: '●',
+  under_review: '▲',
+  shutting_down: '■',
+  restarting: '↻',
+  disabled: '✕',
+  manual_shutdown: '⏸',
+  fault: '⚠',
+  fault_persistent: '⚠',
+};
+
 /**
  * Colored status badge — used in motor cards and sensor charts.
- * Maps status string to a color dot + label.
+ * ISA-101: combines color + icon + text to not depend on color alone.
  */
 export function StatusBadge({ status }: StatusBadgeProps) {
   const color = STATUS_COLORS[status] || '#9ca3af';
   const label = STATUS_LABELS[status] || status.replace(/_/g, ' ');
+  const icon = STATUS_ICONS[status] || '●';
 
   return (
     <span className="status-badge" aria-label={`Estado: ${label}`}>
-      <span className="badge-dot" style={{ backgroundColor: color }} />
-      {label}
+      <span className="badge-icon" style={{ color }} aria-hidden="true">{icon}</span>
+      <span style={{ color }}>{label}</span>
     </span>
   );
 }

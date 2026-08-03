@@ -45,10 +45,22 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 .motor-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
 .motor-card {
   background: var(--surface); border: 1px solid var(--border);
-  border-radius: 8px; padding: 1rem; cursor: pointer; transition: box-shadow 0.2s;
+  border-radius: 8px; padding: 1rem; cursor: pointer; transition: box-shadow 0.2s, border-color 0.2s;
 }
 .motor-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
 .motor-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Compact: healthy/stopped motors — minimal visual weight */
+.motor-card--normal {
+  opacity: 0.85;
+}
+.motor-card--normal:hover { opacity: 1; }
+
+/* Expanded: motors needing attention — prominent */
+.motor-card--attention {
+  border-color: var(--yellow);
+  box-shadow: 0 0 0 1px var(--yellow);
+}
 
 .motor-card-skeleton {
   background: var(--surface); border: 1px solid var(--border);
@@ -71,16 +83,17 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 .card-header { display: flex; justify-content: space-between; align-items: center; }
 .card-name { margin: 0.5rem 0 0.25rem; color: var(--text-heading); font-weight: 500; }
 .card-location { margin: 0 0 0.5rem; color: var(--gray); font-size: 0.875rem; }
+.card-timestamp { margin: 0.5rem 0 0; color: var(--gray); font-size: 0.75rem; font-style: italic; }
 .card-sensors { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 .sensor-value { font-size: 0.875rem; padding: 0.125rem 0.375rem; border-radius: 4px; background: var(--bg); }
 .sensor-value.fault { background: rgba(239,68,68,0.15); color: var(--red); }
 .sensor-value.fault_persistent { background: rgba(153,27,27,0.15); color: #991b1b; }
 
 .status-badge {
-  display: inline-flex; align-items: center; gap: 0.375rem;
-  font-size: 0.8125rem; text-transform: capitalize;
+  display: inline-flex; align-items: center; gap: 0.25rem;
+  font-size: 0.8125rem; font-weight: 500;
 }
-.badge-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.badge-icon { font-size: 0.75rem; line-height: 1; }
 
 .motor-detail { max-width: 900px; margin: 0 auto; padding: 1.5rem; }
 .motor-detail-header { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.5rem; }
@@ -166,11 +179,12 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 
 /* Dashboard header */
 .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; }
-.ref-link {
+.dashboard-links { display: flex; gap: 0.5rem; align-items: center; }
+.ref-link, .grafana-link {
   font-size: 0.875rem; color: var(--accent); text-decoration: none;
   padding: 0.375rem 0.75rem; border: 1px solid var(--accent); border-radius: 6px;
 }
-.ref-link:hover { background: rgba(59,130,246,0.1); }
+.ref-link:hover, .grafana-link:hover { background: rgba(59,130,246,0.1); }
 
 /* Alert dismiss button */
 .alert-item-right { display: flex; align-items: center; gap: 0.5rem; }

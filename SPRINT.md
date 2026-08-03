@@ -28,25 +28,15 @@
 
 ## Pendientes — Frontend / UX industrial (ISA-101)
 
-7. **Vista compacta tipo semáforo como default**
-   - Motores sanos: colapsados, grises, chicos.
-   - Motores anómalos: expandidos, arriba, con color de alarma.
-   - Cards grandes solo en detalle (ya existe MotorDetailPage).
+7. ~~**Vista compacta tipo semáforo como default**~~ ✅ Cards compactas para sanos (código + badge + timestamp), expandidas para anómalos (valores de sensores visibles).
 
-8. **Paleta de alarma restringida**
-   - Grises para estado normal.
-   - Rojo/naranja/amarillo saturados SOLO para alarmas reales.
-   - Separar colores de acento de UI de los de alarma.
+8. ~~**Paleta de alarma restringida**~~ ✅ Grises para estados normales, saturados solo para alarmas. Iconos por estado (▲ ⚠ ✕) para no depender solo del color.
 
-9. **Timestamp "última actualización" visible por motor**
-   - Evitar que el operador confíe en un dato congelado.
-   - Mostrar "hace X seg" en cada card.
+9. ~~**Timestamp "última actualización" visible por motor**~~ ✅ Muestra "Último dato: hace Xs" en cada card.
 
-10. **Reordenar automáticamente: anómalos arriba, sanos abajo**
-    - Prioridad visual por excepción, no por inventario.
+10. ~~**Reordenar automáticamente: anómalos arriba, sanos abajo**~~ ✅ Grid ordenado por prioridad de estado.
 
-11. **Sección/link a Grafana**
-    - Botón o link directo a `localhost:4002` desde el dashboard.
+11. ~~**Sección/link a Grafana**~~ ✅ Botón "📊 Grafana" en el header del dashboard, abre en nueva pestaña.
 
 ---
 

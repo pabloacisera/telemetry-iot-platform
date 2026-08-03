@@ -26,9 +26,19 @@ export function DashboardPage() {
       <AlertBanner />
       <div className="dashboard-header">
         <h1>Vista General de Planta</h1>
-        <Link to="/referencia" className="ref-link">
-          📋 Referencia de estados
-        </Link>
+        <div className="dashboard-links">
+          <a
+            href="http://localhost:4002"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="grafana-link"
+          >
+            📊 Grafana
+          </a>
+          <Link to="/referencia" className="ref-link">
+            📋 Referencia de estados
+          </Link>
+        </div>
       </div>
       {!initialized ? <DashboardSkeleton /> : <MotorGrid />}
     </div>
