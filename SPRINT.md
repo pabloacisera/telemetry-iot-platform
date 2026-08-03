@@ -18,18 +18,11 @@
 
 3. ~~**Reinicios de sensores**~~ ✅ Implementado: auto-restart a los 5s, si recurre → `fault_persistent`. Alerta creada en ambos casos. Endpoint manual: `POST /motors/:id/sensors/:sensorId/restart`.
 
-4. **Estado en memoria → Redis (riesgo de negocio)**
-   - MotorEvaluationService guarda ventanas deslizantes, timers y contadores en memoria.
-   - Si el proceso se reinicia, se pierde estado a mitad de un episodio de anomalía.
-   - Mover a Redis con TTL para persistir entre reinicios y habilitar escalado horizontal.
+4. ~~**Estado en memoria → Redis (riesgo de negocio)**~~ ✅ Implementado: windows, escalation timers, auto-restart flags y stuck trackers se persisten en Redis con write-through. Al reiniciar el proceso, se restauran automáticamente.
 
-5. **Refresh token — revocación en cascada**
-   - El código solo revoca el token usado, no todos los del usuario (documentación dice lo contrario).
-   - Alinear comportamiento con documentación.
+5. ~~**Refresh token — revocación en cascada**~~ ✅ Implementado: si se detecta reuso de un token revocado, se revocan TODOS los tokens del usuario.
 
-6. **Refresh token — lookup O(n) con bcrypt**
-   - Actualmente itera todos los tokens activos con bcrypt.compare.
-   - Indexar por jti público y validar solo ese registro.
+6. ~~**Refresh token — lookup O(n) con bcrypt**~~ ✅ Implementado: campo `jti` con índice único permite lookup O(1). Tokens legacy migran al formato nuevo en el próximo refresh.
 
 ---
 
