@@ -8,7 +8,7 @@ describe('MotorEvaluationService', () => {
   };
   let commandService: { publishRestart: jest.Mock };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     statusTransition = {
       transitionMotor: jest.fn().mockResolvedValue(undefined),
       createAlert: jest.fn().mockResolvedValue(undefined),
@@ -20,12 +20,21 @@ describe('MotorEvaluationService', () => {
     service = new MotorEvaluationService(
       statusTransition as any,
       commandService as any,
+      {
+        restoreWindows: jest.fn().mockResolvedValue(new Map()),
+        restoreAutoRestartUsed: jest.fn().mockResolvedValue(new Map()),
+        restoreEscalationTimers: jest.fn().mockResolvedValue(new Map()),
+        persistWindow: jest.fn().mockResolvedValue(undefined),
+        persistAutoRestartUsed: jest.fn().mockResolvedValue(undefined),
+        persistEscalationTimer: jest.fn().mockResolvedValue(undefined),
+        clearEscalationTimer: jest.fn().mockResolvedValue(undefined),
+      } as any,
     );
 
     // Init with motor 1 having 3 sensors (IDs: 1, 2, 3)
     const motorStatuses = new Map<number, string>([[1, 'healthy']]);
     const motorSensorIds = new Map<number, number[]>([[1, [1, 2, 3]]]);
-    service.init(motorStatuses, motorSensorIds);
+    await service.init(motorStatuses, motorSensorIds);
   });
 
   afterEach(() => {
@@ -227,7 +236,7 @@ describe('MotorEvaluationService', () => {
       service.onMotorHealthy(1);
 
       // Manual reactivation resets the counter
-      service.onMotorReactivated(1);
+      await service.onMotorReactivated(1);
       statusTransition.transitionMotor.mockClear();
       commandService.publishRestart.mockClear();
 

@@ -112,4 +112,155 @@ export class CacheService implements OnModuleDestroy {
     const entries = await this.redis.lrange(key, 0, -1);
     return entries.map((e) => JSON.parse(e));
   }
+
+  // ===================================================================
+  // State persistence — survives process restarts
+  // ===================================================================
+
+  /** Persist a motor's sliding window (array of booleans per sensor). */
+  async persistWindow(motorSensorId: number, window: boolean[]): Promise<void> {
+    const key = `state:window:${motorSensorId}`;
+    const value = JSON.stringify(window);
+    await this.redis.set(key, value, 'EX', 600); // TTL 10 min (window ~2 min of readings)
+  }
+
+  /** Restore all sliding windows from Redis. */
+  async restoreWindows(): Promise<Map<number, boolean[]>> {
+    const keys = await this.redis.keys('state:window:*');
+    const result = new Map<number, boolean[]>();
+    if (keys.length === 0) return result;
+
+    const pipeline = this.redis.pipeline();
+    for (const key of keys) {
+      pipeline.get(key);
+    }
+    const responses = await pipeline.exec();
+    if (!responses) return result;
+
+    for (let i = 0; i < keys.length; i++) {
+      const idMatch = keys[i].match(/state:window:(\d+)/);
+      if (!idMatch) continue;
+      const [err, value] = responses[i] as [Error | null, string | null];
+      if (err || !value) continue;
+      result.set(parseInt(idMatch[1], 10), JSON.parse(value));
+    }
+    return result;
+  }
+
+  /** Persist escalation timer expiry timestamp for a motor. */
+  async persistEscalationTimer(motorId: number, expiresAt: number): Promise<void> {
+    const key = `state:escalation:${motorId}`;
+    await this.redis.set(key, expiresAt.toString(), 'EX', 180); // TTL 3 min
+  }
+
+  /** Remove escalation timer state. */
+  async clearEscalationTimer(motorId: number): Promise<void> {
+    await this.redis.del(`state:escalation:${motorId}`);
+  }
+
+  /** Restore all active escalation timers. Returns motorId → expiresAt timestamp. */
+  async restoreEscalationTimers(): Promise<Map<number, number>> {
+    const keys = await this.redis.keys('state:escalation:*');
+    const result = new Map<number, number>();
+    if (keys.length === 0) return result;
+
+    const pipeline = this.redis.pipeline();
+    for (const key of keys) {
+      pipeline.get(key);
+    }
+    const responses = await pipeline.exec();
+    if (!responses) return result;
+
+    for (let i = 0; i < keys.length; i++) {
+      const idMatch = keys[i].match(/state:escalation:(\d+)/);
+      if (!idMatch) continue;
+      const [err, value] = responses[i] as [Error | null, string | null];
+      if (err || !value) continue;
+      result.set(parseInt(idMatch[1], 10), parseInt(value, 10));
+    }
+    return result;
+  }
+
+  /** Persist auto-restart-used flag for a motor. */
+  async persistAutoRestartUsed(motorId: number, used: boolean): Promise<void> {
+    const key = `state:auto_restart:${motorId}`;
+    if (used) {
+      await this.redis.set(key, '1', 'EX', 3600); // TTL 1h
+    } else {
+      await this.redis.del(key);
+    }
+  }
+
+  /** Restore auto-restart-used flags. Returns motorId → boolean. */
+  async restoreAutoRestartUsed(): Promise<Map<number, boolean>> {
+    const keys = await this.redis.keys('state:auto_restart:*');
+    const result = new Map<number, boolean>();
+    if (keys.length === 0) return result;
+
+    for (const key of keys) {
+      const idMatch = key.match(/state:auto_restart:(\d+)/);
+      if (idMatch) {
+        result.set(parseInt(idMatch[1], 10), true);
+      }
+    }
+    return result;
+  }
+
+  /** Persist sensor auto-restart-used flag. */
+  async persistSensorAutoRestartUsed(motorSensorId: number, used: boolean): Promise<void> {
+    const key = `state:sensor_auto_restart:${motorSensorId}`;
+    if (used) {
+      await this.redis.set(key, '1', 'EX', 3600);
+    } else {
+      await this.redis.del(key);
+    }
+  }
+
+  /** Restore sensor auto-restart-used flags. */
+  async restoreSensorAutoRestartUsed(): Promise<Map<number, boolean>> {
+    const keys = await this.redis.keys('state:sensor_auto_restart:*');
+    const result = new Map<number, boolean>();
+    if (keys.length === 0) return result;
+
+    for (const key of keys) {
+      const idMatch = key.match(/state:sensor_auto_restart:(\d+)/);
+      if (idMatch) {
+        result.set(parseInt(idMatch[1], 10), true);
+      }
+    }
+    return result;
+  }
+
+  /** Persist stuck tracker for a sensor. */
+  async persistStuckTracker(motorSensorId: number, value: number, count: number): Promise<void> {
+    const key = `state:stuck:${motorSensorId}`;
+    await this.redis.hset(key, { value: value.toString(), count: count.toString() });
+    await this.redis.expire(key, 600);
+  }
+
+  /** Restore all stuck trackers. */
+  async restoreStuckTrackers(): Promise<Map<number, { value: number; count: number }>> {
+    const keys = await this.redis.keys('state:stuck:*');
+    const result = new Map<number, { value: number; count: number }>();
+    if (keys.length === 0) return result;
+
+    const pipeline = this.redis.pipeline();
+    for (const key of keys) {
+      pipeline.hgetall(key);
+    }
+    const responses = await pipeline.exec();
+    if (!responses) return result;
+
+    for (let i = 0; i < keys.length; i++) {
+      const idMatch = keys[i].match(/state:stuck:(\d+)/);
+      if (!idMatch) continue;
+      const [err, data] = responses[i] as [Error | null, Record<string, string>];
+      if (err || !data || !data.value) continue;
+      result.set(parseInt(idMatch[1], 10), {
+        value: parseFloat(data.value),
+        count: parseInt(data.count, 10),
+      });
+    }
+    return result;
+  }
 }

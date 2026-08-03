@@ -10,7 +10,7 @@ describe('SensorEvaluationService', () => {
   };
   let motorEvaluation: { getMotorStatus: jest.Mock };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     statusTransition = {
       transitionSensor: jest.fn().mockResolvedValue(undefined),
       createSensorFault: jest.fn().mockResolvedValue(undefined),
@@ -25,6 +25,12 @@ describe('SensorEvaluationService', () => {
       statusTransition as any,
       motorEvaluation as any,
       { publishSensorRestart: jest.fn() } as any,
+      {
+        restoreStuckTrackers: jest.fn().mockResolvedValue(new Map()),
+        restoreSensorAutoRestartUsed: jest.fn().mockResolvedValue(new Map()),
+        persistStuckTracker: jest.fn().mockResolvedValue(undefined),
+        persistSensorAutoRestartUsed: jest.fn().mockResolvedValue(undefined),
+      } as any,
     );
 
     // Motor 1 with sensors 1, 2, 3
@@ -39,7 +45,7 @@ describe('SensorEvaluationService', () => {
       [2, { motorId: 1, sensorType: 'vibration' }],
       [3, { motorId: 1, sensorType: 'current' }],
     ]);
-    service.init(sensorStatuses, motorSensorIds, sensorMeta);
+    await service.init(sensorStatuses, motorSensorIds, sensorMeta);
   });
 
   describe('out_of_range detection', () => {

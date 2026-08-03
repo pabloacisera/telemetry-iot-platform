@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { StatusTransitionService } from './status-transition.service';
 import { MotorEvaluationService } from './motor-evaluation.service';
 import { CommandService } from '../command/command.service';
+import { CacheService } from '../cache';
 
 /**
  * Sensor fault detection — independent from motor evaluation.
@@ -42,14 +43,15 @@ export class SensorEvaluationService {
     private readonly statusTransition: StatusTransitionService,
     private readonly motorEvaluation: MotorEvaluationService,
     private readonly commandService: CommandService,
+    private readonly cache: CacheService,
   ) {}
 
-  /** Initialize internal state from loaded metadata. */
-  init(
+  /** Initialize internal state from loaded metadata and restore from Redis. */
+  async init(
     sensorStatuses: Map<number, string>,
     motorSensorIds: Map<number, number[]>,
     sensorMeta?: Map<number, { motorId: number; sensorType: string }>,
-  ): void {
+  ): Promise<void> {
     this.sensorStatuses = sensorStatuses;
     this.motorSensorIds = motorSensorIds;
     if (sensorMeta) {
@@ -60,6 +62,34 @@ export class SensorEvaluationService {
       for (const id of sensorIds) {
         this.stuckTrackers.set(id, { value: NaN, count: 0 });
       }
+    }
+
+    // Restore state from Redis
+    await this.restoreState();
+  }
+
+  /** Restore persisted state from Redis. */
+  private async restoreState(): Promise<void> {
+    try {
+      const savedStuck = await this.cache.restoreStuckTrackers();
+      for (const [sensorId, tracker] of savedStuck) {
+        if (this.stuckTrackers.has(sensorId)) {
+          this.stuckTrackers.set(sensorId, tracker);
+        }
+      }
+
+      const savedAutoRestart = await this.cache.restoreSensorAutoRestartUsed();
+      for (const [sensorId, used] of savedAutoRestart) {
+        this.autoRestartUsed.set(sensorId, used);
+      }
+
+      if (savedStuck.size > 0 || savedAutoRestart.size > 0) {
+        this.logger.log(
+          `Sensor state restored: ${savedStuck.size} stuck trackers, ${savedAutoRestart.size} auto-restart flags`,
+        );
+      }
+    } catch (err) {
+      this.logger.warn(`Failed to restore sensor state from Redis: ${(err as Error).message}`);
     }
   }
 
@@ -108,6 +138,9 @@ export class SensorEvaluationService {
       tracker.value = rounded;
       tracker.count = 1;
     }
+
+    // Persist stuck tracker (fire-and-forget)
+    this.cache.persistStuckTracker(motorSensorId, tracker.value, tracker.count).catch(() => {});
   }
 
   /** Handle sensor disconnection (called when grace window expires). */
@@ -131,6 +164,7 @@ export class SensorEvaluationService {
 
     await this.restoreSensor(motorSensorId, meta.motorId, meta.sensorType);
     this.autoRestartUsed.delete(motorSensorId);
+    await this.cache.persistSensorAutoRestartUsed(motorSensorId, false);
     return true;
   }
 
@@ -186,6 +220,7 @@ export class SensorEvaluationService {
 
       this.autoRestartUsed.set(motorSensorId, true);
       await this.restoreSensor(motorSensorId, motorId, sensorType);
+      await this.cache.persistSensorAutoRestartUsed(motorSensorId, true);
 
       this.logger.log(
         `Sensor ${motorSensorId} (motor ${motorId}): auto-restarted`,
