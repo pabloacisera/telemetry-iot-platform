@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
 import type { AppDispatch, RootState } from '../store';
 import { fetchMotors } from '../store/motors.slice';
 import { MotorGrid } from '../components/motors/MotorGrid';
@@ -21,7 +22,12 @@ export function DashboardPage() {
   return (
     <div className="dashboard">
       <AlertBanner />
-      <h1>Vista General de Planta</h1>
+      <div className="dashboard-header">
+        <h1>Vista General de Planta</h1>
+        <Link to="/referencia" className="ref-link">
+          📋 Referencia de estados
+        </Link>
+      </div>
       {loading && <p>Cargando motores...</p>}
       {error && <p className="error">{error}</p>}
       <MotorGrid />

@@ -6,19 +6,18 @@ import { refreshToken } from './store/auth.slice';
 import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { MotorDetailPage } from './pages/MotorDetailPage';
+import { ReferencePage } from './pages/ReferencePage';
 import { ProtectedRoute } from './components/routes/ProtectedRoute';
 
 /**
  * Root application component.
  * On mount, attempts to restore session via refresh token (httpOnly cookie).
- * Routes: /login (public), /dashboard and /motors/:id (protected).
  */
 function App() {
   const dispatch = useDispatch<AppDispatch>();
   const user = useSelector((state: RootState) => state.auth.user);
   const accessToken = useSelector((state: RootState) => state.auth.accessToken);
 
-  // On first load, try to restore session from refresh cookie
   useEffect(() => {
     if (!accessToken) {
       dispatch(refreshToken());
@@ -35,6 +34,7 @@ function App() {
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/motors/:id" element={<MotorDetailPage />} />
+          <Route path="/referencia" element={<ReferencePage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
