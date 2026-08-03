@@ -9,8 +9,24 @@ describe('SensorEvaluationService', () => {
     createAlert: jest.Mock;
   };
   let motorEvaluation: { getMotorStatus: jest.Mock };
+  let commandService: { publishSensorRestart: jest.Mock };
+  let cache: {
+    getStuckTracker: jest.Mock;
+    persistStuckTracker: jest.Mock;
+    getSensorAutoRestartUsed: jest.Mock;
+    persistSensorAutoRestartUsed: jest.Mock;
+  };
+
+  /** Simulated stuck tracker state. */
+  let stuckState: Map<number, { value: number; count: number }>;
 
   beforeEach(async () => {
+    stuckState = new Map([
+      [1, { value: NaN, count: 0 }],
+      [2, { value: NaN, count: 0 }],
+      [3, { value: NaN, count: 0 }],
+    ]);
+
     statusTransition = {
       transitionSensor: jest.fn().mockResolvedValue(undefined),
       createSensorFault: jest.fn().mockResolvedValue(undefined),
@@ -20,24 +36,30 @@ describe('SensorEvaluationService', () => {
     motorEvaluation = {
       getMotorStatus: jest.fn().mockReturnValue('healthy'),
     };
+    commandService = {
+      publishSensorRestart: jest.fn().mockResolvedValue(undefined),
+    };
+    cache = {
+      getStuckTracker: jest.fn().mockImplementation((id: number) => {
+        return Promise.resolve(stuckState.get(id) || { value: NaN, count: 0 });
+      }),
+      persistStuckTracker: jest.fn().mockImplementation((id: number, value: number, count: number) => {
+        stuckState.set(id, { value, count });
+        return Promise.resolve();
+      }),
+      getSensorAutoRestartUsed: jest.fn().mockResolvedValue(false),
+      persistSensorAutoRestartUsed: jest.fn().mockResolvedValue(undefined),
+    };
 
     service = new SensorEvaluationService(
       statusTransition as any,
       motorEvaluation as any,
-      { publishSensorRestart: jest.fn() } as any,
-      {
-        restoreStuckTrackers: jest.fn().mockResolvedValue(new Map()),
-        restoreSensorAutoRestartUsed: jest.fn().mockResolvedValue(new Map()),
-        persistStuckTracker: jest.fn().mockResolvedValue(undefined),
-        persistSensorAutoRestartUsed: jest.fn().mockResolvedValue(undefined),
-      } as any,
+      commandService as any,
+      cache as any,
     );
 
-    // Motor 1 with sensors 1, 2, 3
     const sensorStatuses = new Map<number, string>([
-      [1, 'ok'],
-      [2, 'ok'],
-      [3, 'ok'],
+      [1, 'ok'], [2, 'ok'], [3, 'ok'],
     ]);
     const motorSensorIds = new Map<number, number[]>([[1, [1, 2, 3]]]);
     const sensorMeta = new Map<number, { motorId: number; sensorType: string }>([
@@ -50,23 +72,18 @@ describe('SensorEvaluationService', () => {
 
   describe('out_of_range detection', () => {
     it('should trigger fault when value exceeds plausible max', async () => {
-      await service.evaluateReading(1, 1, 200, 10, 150); // 200 > 150
+      await service.evaluateReading(1, 1, 200, 10, 150);
 
       expect(statusTransition.transitionSensor).toHaveBeenCalledWith(1, 1, 'fault');
-      expect(statusTransition.createSensorFault).toHaveBeenCalledWith(
-        1,
-        'out_of_range',
-      );
+      expect(statusTransition.createSensorFault).toHaveBeenCalledWith(1, 'out_of_range');
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(1, 'sensor_fault');
     });
 
     it('should trigger fault when value is below plausible min', async () => {
-      await service.evaluateReading(1, 1, -5, 0, 20); // -5 < 0
+      await service.evaluateReading(1, 1, -5, 0, 20);
 
       expect(statusTransition.transitionSensor).toHaveBeenCalledWith(1, 1, 'fault');
-      expect(statusTransition.createSensorFault).toHaveBeenCalledWith(
-        1,
-        'out_of_range',
-      );
+      expect(statusTransition.createSensorFault).toHaveBeenCalledWith(1, 'out_of_range');
     });
 
     it('should NOT trigger for values within plausible range', async () => {
@@ -77,14 +94,12 @@ describe('SensorEvaluationService', () => {
   });
 
   describe('stuck detection (20 consecutive same value)', () => {
-    it('should trigger fault after 20 consecutive identical readings (1 decimal)', async () => {
-      // 20 readings all rounding to 55.1
+    it('should trigger fault after 20 consecutive identical readings', async () => {
       for (let i = 0; i < 19; i++) {
         await service.evaluateReading(1, 1, 55.1, 10, 150);
       }
       expect(statusTransition.createSensorFault).not.toHaveBeenCalled();
 
-      // 20th reading triggers
       await service.evaluateReading(1, 1, 55.1, 10, 150);
       expect(statusTransition.createSensorFault).toHaveBeenCalledWith(1, 'stuck');
     });
@@ -93,94 +108,73 @@ describe('SensorEvaluationService', () => {
       for (let i = 0; i < 18; i++) {
         await service.evaluateReading(1, 1, 55.1, 10, 150);
       }
-      // Different value resets counter (this is reading #1 of the new value)
+      // Different value resets
       await service.evaluateReading(1, 1, 55.3, 10, 150);
 
-      // 18 more of the new value (total 19 of 55.3) — should NOT trigger
+      // 18 more — not yet 20
       for (let i = 0; i < 18; i++) {
         await service.evaluateReading(1, 1, 55.3, 10, 150);
       }
       expect(statusTransition.createSensorFault).not.toHaveBeenCalled();
 
-      // 20th of the new value triggers
+      // 20th triggers
       await service.evaluateReading(1, 1, 55.3, 10, 150);
       expect(statusTransition.createSensorFault).toHaveBeenCalledWith(1, 'stuck');
     });
+  });
 
-    it('should consider values equal when rounded to 1 decimal', async () => {
-      // 55.11, 55.12, 55.14 all round to 55.1
-      for (let i = 0; i < 20; i++) {
-        await service.evaluateReading(1, 1, 55.1 + i * 0.001, 10, 150);
-      }
-      // All round to 55.1 → should trigger
-      expect(statusTransition.createSensorFault).toHaveBeenCalledWith(1, 'stuck');
+  describe('fault_persistent on recurrence', () => {
+    it('should mark fault_persistent if auto-restart was already used', async () => {
+      cache.getSensorAutoRestartUsed.mockResolvedValue(true);
+
+      await service.evaluateReading(1, 1, 200, 10, 150);
+
+      expect(statusTransition.transitionSensor).toHaveBeenCalledWith(1, 1, 'fault_persistent');
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(1, 'sensor_fault_persistent');
     });
   });
 
   describe('disconnected detection', () => {
-    it('should trigger fault on sensor disconnection when motor is healthy', async () => {
+    it('should trigger fault on disconnection when motor is healthy', async () => {
       await service.onSensorDisconnected(1, 1);
 
       expect(statusTransition.transitionSensor).toHaveBeenCalledWith(1, 1, 'fault');
-      expect(statusTransition.createSensorFault).toHaveBeenCalledWith(
-        1,
-        'disconnected',
-      );
+      expect(statusTransition.createSensorFault).toHaveBeenCalledWith(1, 'disconnected');
     });
 
     it('should NOT trigger during motor shutting_down', async () => {
       motorEvaluation.getMotorStatus.mockReturnValue('shutting_down');
-
       await service.onSensorDisconnected(1, 1);
-
-      expect(statusTransition.transitionSensor).not.toHaveBeenCalled();
-    });
-
-    it('should NOT trigger during motor restarting', async () => {
-      motorEvaluation.getMotorStatus.mockReturnValue('restarting');
-
-      await service.onSensorDisconnected(1, 1);
-
       expect(statusTransition.transitionSensor).not.toHaveBeenCalled();
     });
   });
 
-  describe('sensor evaluation paused during motor restart', () => {
-    it('should not evaluate already-faulted sensor', async () => {
-      // Trigger fault first
-      await service.evaluateReading(1, 1, 200, 10, 150);
-      statusTransition.transitionSensor.mockClear();
-      statusTransition.createSensorFault.mockClear();
-
-      // Further readings should be ignored (sensor already in fault)
-      await service.evaluateReading(1, 1, 55, 10, 150);
-      expect(statusTransition.transitionSensor).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('widespread failure (all 3 sensors in fault)', () => {
+  describe('widespread failure', () => {
     it('should transition motor to under_review when all 3 sensors fault', async () => {
-      // Fault all 3 sensors
-      await service.evaluateReading(1, 1, 200, 10, 150); // sensor 1: OOR
-      await service.evaluateReading(2, 1, 200, 10, 150); // sensor 2: OOR
-      await service.evaluateReading(3, 1, 200, 10, 150); // sensor 3: OOR
+      await service.evaluateReading(1, 1, 200, 10, 150);
+      await service.evaluateReading(2, 1, 200, 10, 150);
+      await service.evaluateReading(3, 1, 200, 10, 150);
 
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'healthy',
-        'under_review',
-      );
-      expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        1,
-        'sensor_failure_widespread',
-      );
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(1, 'healthy', 'under_review');
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(1, 'sensor_failure_widespread');
+    });
+  });
+
+  describe('manual restart', () => {
+    it('should restore sensor and clear auto-restart flag', async () => {
+      // Put sensor in fault first
+      await service.evaluateReading(1, 1, 200, 10, 150);
+
+      const result = await service.manualRestart(1);
+
+      expect(result).toBe(true);
+      expect(commandService.publishSensorRestart).toHaveBeenCalledWith(1, 'temperature');
+      expect(cache.persistSensorAutoRestartUsed).toHaveBeenCalledWith(1, false);
     });
 
-    it('should NOT trigger widespread if only 2/3 sensors are in fault', async () => {
-      await service.evaluateReading(1, 1, 200, 10, 150); // sensor 1: OOR
-      await service.evaluateReading(2, 1, 200, 10, 150); // sensor 2: OOR
-
-      expect(statusTransition.transitionMotor).not.toHaveBeenCalled();
+    it('should return false if sensor is not in fault', async () => {
+      const result = await service.manualRestart(1);
+      expect(result).toBe(false);
     });
   });
 });

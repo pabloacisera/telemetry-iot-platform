@@ -6,29 +6,28 @@ import { CacheService } from '../cache';
 /**
  * Motor health evaluation — sliding window + escalation logic.
  *
- * State is persisted to Redis (write-through) so it survives process restarts.
- * On boot, state is restored from Redis. If no state exists, starts fresh.
+ * ARCHITECTURE: Redis is the source of truth for all evaluation state.
+ * Multiple backend instances can evaluate concurrently without conflicts
+ * thanks to Redis atomic operations and distributed locking per motor.
+ *
+ * Local Maps only hold static metadata (motor statuses, sensor mappings)
+ * which are loaded from DB on boot and updated via event handlers.
+ *
+ * Timers (escalation 2min) still use local setTimeout — on process restart,
+ * they are restored from Redis expiry timestamps. For full multi-instance
+ * timer coordination, see docs/23-scaling-guide.md (keyspace notifications).
  */
 @Injectable()
 export class MotorEvaluationService {
   private readonly logger = new Logger(MotorEvaluationService.name);
 
-  /** Sliding window: motor_sensor_id → circular buffer of booleans. */
-  private windows: Map<number, boolean[]> = new Map();
-
-  /** Escalation timers: motor_id → timeout handle. */
+  /** Escalation timers: motor_id → timeout handle (local, restored from Redis on boot). */
   private escalationTimers: Map<number, NodeJS.Timeout> = new Map();
 
-  /** Escalation expiry: motor_id → timestamp (for persistence). */
-  private escalationExpiry: Map<number, number> = new Map();
-
-  /** Whether auto-restart was already used this episode: motor_id → boolean. */
-  private autoRestartUsed: Map<number, boolean> = new Map();
-
-  /** Current motor statuses (in-memory cache to avoid DB reads per reading). */
+  /** Current motor statuses (in-memory cache, updated by event handlers). */
   private motorStatuses: Map<number, string> = new Map();
 
-  /** Motor → sensor IDs mapping. */
+  /** Motor → sensor IDs mapping (static metadata from DB). */
   private motorSensorIds: Map<number, number[]> = new Map();
 
   constructor(
@@ -37,7 +36,7 @@ export class MotorEvaluationService {
     private readonly cache: CacheService,
   ) {}
 
-  /** Initialize internal state from loaded metadata and restore from Redis. */
+  /** Initialize from DB metadata and restore active timers from Redis. */
   async init(
     motorStatuses: Map<number, string>,
     motorSensorIds: Map<number, number[]>,
@@ -45,56 +44,30 @@ export class MotorEvaluationService {
     this.motorStatuses = motorStatuses;
     this.motorSensorIds = motorSensorIds;
 
-    // Initialize empty windows for all sensors
-    for (const sensorIds of motorSensorIds.values()) {
-      for (const id of sensorIds) {
-        this.windows.set(id, []);
-      }
-    }
-
-    // Restore state from Redis
-    await this.restoreState();
+    // Restore escalation timers from Redis
+    await this.restoreEscalationTimers();
   }
 
-  /** Restore persisted state from Redis. */
-  private async restoreState(): Promise<void> {
+  /** Restore and re-schedule escalation timers from Redis. */
+  private async restoreEscalationTimers(): Promise<void> {
     try {
-      // Restore sliding windows
-      const savedWindows = await this.cache.restoreWindows();
-      for (const [sensorId, window] of savedWindows) {
-        if (this.windows.has(sensorId)) {
-          this.windows.set(sensorId, window);
-        }
-      }
-
-      // Restore auto-restart flags
-      const savedAutoRestart = await this.cache.restoreAutoRestartUsed();
-      for (const [motorId, used] of savedAutoRestart) {
-        this.autoRestartUsed.set(motorId, used);
-      }
-
-      // Restore and re-schedule escalation timers
       const savedTimers = await this.cache.restoreEscalationTimers();
       for (const [motorId, expiresAt] of savedTimers) {
         const remaining = expiresAt - Date.now();
         if (remaining > 0) {
           this.scheduleEscalation(motorId, remaining);
-          this.escalationExpiry.set(motorId, expiresAt);
         } else {
-          // Timer already expired while process was down — execute now
+          // Expired while down — execute now
           this.checkEscalation(motorId).catch((err) => {
-            this.logger.error(`Restored escalation failed for motor ${motorId}: ${err.message}`);
+            this.logger.error(`Restored escalation failed motor ${motorId}: ${err.message}`);
           });
         }
       }
-
-      if (savedWindows.size > 0 || savedAutoRestart.size > 0 || savedTimers.size > 0) {
-        this.logger.log(
-          `State restored: ${savedWindows.size} windows, ${savedAutoRestart.size} auto-restart flags, ${savedTimers.size} escalation timers`,
-        );
+      if (savedTimers.size > 0) {
+        this.logger.log(`Restored ${savedTimers.size} escalation timers from Redis`);
       }
     } catch (err) {
-      this.logger.warn(`Failed to restore state from Redis (starting fresh): ${(err as Error).message}`);
+      this.logger.warn(`Failed to restore timers: ${(err as Error).message}`);
     }
   }
 
@@ -103,60 +76,57 @@ export class MotorEvaluationService {
     return this.motorStatuses.get(motorId) || 'healthy';
   }
 
-  /** Update in-memory motor status (called when external events change status). */
+  /** Update in-memory motor status. */
   setMotorStatus(motorId: number, status: string): void {
     this.motorStatuses.set(motorId, status);
   }
 
-  /** Reset the sliding window for all sensors of a motor (called after restart). */
+  /** Reset sliding windows for all sensors of a motor (after restart). */
   async resetWindow(motorId: number): Promise<void> {
-    const sensorIds = this.motorSensorIds.get(motorId);
-    if (sensorIds) {
-      for (const id of sensorIds) {
-        this.windows.set(id, []);
-        await this.cache.persistWindow(id, []);
-      }
+    const sensorIds = this.motorSensorIds.get(motorId) || [];
+    for (const id of sensorIds) {
+      await this.cache.clearWindow(id);
     }
-    // Reset auto-restart counter for this motor
-    this.autoRestartUsed.delete(motorId);
     await this.cache.persistAutoRestartUsed(motorId, false);
-
-    // Clear escalation timer if any
     this.clearEscalationTimer(motorId);
   }
 
-  /** Push a reading result into the sliding window and evaluate transitions. */
+  /**
+   * Push a reading result and evaluate motor transitions.
+   * Uses distributed lock to prevent concurrent evaluation of the same motor.
+   */
   async pushReading(
     motorSensorId: number,
     motorId: number,
     isAnomalous: boolean,
     isCritical: boolean,
   ): Promise<void> {
-    const window = this.windows.get(motorSensorId);
-    if (!window) return;
+    // Acquire lock (short TTL — just for this evaluation cycle)
+    const locked = await this.cache.acquireMotorLock(motorId);
+    if (!locked) return; // Another instance is evaluating this motor right now
 
-    window.push(isAnomalous);
-    if (window.length > 8) window.shift();
+    try {
+      // Push to sliding window in Redis (atomic, keeps max 8)
+      const window = await this.cache.pushToWindow(motorSensorId, isAnomalous);
+      const motorStatus = this.motorStatuses.get(motorId);
 
-    // Persist window to Redis (fire-and-forget for performance)
-    this.cache.persistWindow(motorSensorId, window).catch(() => {});
-
-    const motorStatus = this.motorStatuses.get(motorId);
-
-    if (isCritical && motorStatus === 'healthy') {
-      await this.triggerUnderReview(motorId);
-      return;
-    }
-
-    if (motorStatus === 'healthy') {
-      const anomalousCount = window.filter(Boolean).length;
-      if (anomalousCount >= 5) {
+      if (isCritical && motorStatus === 'healthy') {
         await this.triggerUnderReview(motorId);
+        return;
       }
+
+      if (motorStatus === 'healthy') {
+        const anomalousCount = window.filter(Boolean).length;
+        if (anomalousCount >= 5) {
+          await this.triggerUnderReview(motorId);
+        }
+      }
+    } finally {
+      await this.cache.releaseMotorLock(motorId);
     }
   }
 
-  /** Transition motor to under_review and start the 2-min escalation timer. */
+  /** Transition motor to under_review and start escalation timer. */
   private async triggerUnderReview(motorId: number): Promise<void> {
     const current = this.motorStatuses.get(motorId);
     if (current !== 'healthy') return;
@@ -168,7 +138,7 @@ export class MotorEvaluationService {
     this.startEscalationTimer(motorId);
   }
 
-  /** Start a 2-minute timer; if still anomalous at expiry → forced restart. */
+  /** Start 2-minute escalation timer (persisted to Redis for restore). */
   private startEscalationTimer(motorId: number): void {
     this.clearEscalationTimer(motorId);
 
@@ -176,9 +146,6 @@ export class MotorEvaluationService {
     const expiresAt = Date.now() + durationMs;
 
     this.scheduleEscalation(motorId, durationMs);
-    this.escalationExpiry.set(motorId, expiresAt);
-
-    // Persist to Redis
     this.cache.persistEscalationTimer(motorId, expiresAt).catch(() => {});
   }
 
@@ -186,25 +153,22 @@ export class MotorEvaluationService {
   private scheduleEscalation(motorId: number, delayMs: number): void {
     const timer = setTimeout(() => {
       this.escalationTimers.delete(motorId);
-      this.escalationExpiry.delete(motorId);
       this.cache.clearEscalationTimer(motorId).catch(() => {});
-
       this.checkEscalation(motorId).catch((err) => {
-        this.logger.error(`Escalation check failed for motor ${motorId}: ${err.message}`);
+        this.logger.error(`Escalation check failed motor ${motorId}: ${err.message}`);
       });
     }, delayMs);
 
     this.escalationTimers.set(motorId, timer);
   }
 
-  /** Clear escalation timer (in-memory + Redis). */
+  /** Clear escalation timer (local + Redis). */
   private clearEscalationTimer(motorId: number): void {
     const existing = this.escalationTimers.get(motorId);
     if (existing) {
       clearTimeout(existing);
       this.escalationTimers.delete(motorId);
     }
-    this.escalationExpiry.delete(motorId);
     this.cache.clearEscalationTimer(motorId).catch(() => {});
   }
 
@@ -212,15 +176,22 @@ export class MotorEvaluationService {
   private async checkEscalation(motorId: number): Promise<void> {
     if (this.motorStatuses.get(motorId) !== 'under_review') return;
 
+    // Check all sensor windows directly from Redis
     const sensorIds = this.motorSensorIds.get(motorId) || [];
-    const stillAnomalous = sensorIds.some((id) => {
-      const window = this.windows.get(id) || [];
-      return window.filter(Boolean).length >= 5;
-    });
+    let stillAnomalous = false;
+    for (const id of sensorIds) {
+      const window = await this.cache.getWindow(id);
+      if (window.filter(Boolean).length >= 5) {
+        stillAnomalous = true;
+        break;
+      }
+    }
 
     if (!stillAnomalous) return;
 
-    if (this.autoRestartUsed.get(motorId)) {
+    const alreadyRestarted = await this.cache.getAutoRestartUsed(motorId);
+
+    if (alreadyRestarted) {
       await this.statusTransition.transitionMotor(motorId, 'under_review', 'disabled');
       await this.statusTransition.createAlert(motorId, 'disabled');
       this.motorStatuses.set(motorId, 'disabled');
@@ -231,17 +202,15 @@ export class MotorEvaluationService {
     await this.statusTransition.createAlert(motorId, 'forced_restart');
     this.motorStatuses.set(motorId, 'shutting_down');
     await this.commandService.publishRestart(motorId, 'system');
-    this.autoRestartUsed.set(motorId, true);
     await this.cache.persistAutoRestartUsed(motorId, true);
   }
 
-  /** Called when motor enters restarting — resets ring buffers. */
+  /** Called when motor enters restarting — clears windows in Redis. */
   onMotorRestarting(motorId: number): void {
     this.motorStatuses.set(motorId, 'restarting');
     const sensorIds = this.motorSensorIds.get(motorId) || [];
     for (const id of sensorIds) {
-      this.windows.set(id, []);
-      this.cache.persistWindow(id, []).catch(() => {});
+      this.cache.clearWindow(id).catch(() => {});
     }
     this.clearEscalationTimer(motorId);
   }
@@ -254,12 +223,10 @@ export class MotorEvaluationService {
   /** Called when admin/operator manually reactivates a disabled motor. */
   async onMotorReactivated(motorId: number): Promise<void> {
     this.motorStatuses.set(motorId, 'healthy');
-    this.autoRestartUsed.set(motorId, false);
     await this.cache.persistAutoRestartUsed(motorId, false);
     const sensorIds = this.motorSensorIds.get(motorId) || [];
     for (const id of sensorIds) {
-      this.windows.set(id, []);
-      await this.cache.persistWindow(id, []);
+      await this.cache.clearWindow(id);
     }
   }
 }

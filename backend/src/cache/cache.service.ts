@@ -263,4 +263,76 @@ export class CacheService implements OnModuleDestroy {
     }
     return result;
   }
+
+  // ===================================================================
+  // Distributed lock — prevents race conditions in multi-instance
+  // ===================================================================
+
+  /**
+   * Acquire a distributed lock for a motor evaluation.
+   * Uses SETNX with TTL to prevent deadlocks.
+   * Returns true if lock acquired, false if another instance holds it.
+   */
+  async acquireMotorLock(motorId: number, ttlMs = 200): Promise<boolean> {
+    const key = `lock:motor:${motorId}`;
+    const result = await this.redis.set(key, '1', 'PX', ttlMs, 'NX');
+    return result === 'OK';
+  }
+
+  /** Release a motor lock. */
+  async releaseMotorLock(motorId: number): Promise<void> {
+    await this.redis.del(`lock:motor:${motorId}`);
+  }
+
+  // ===================================================================
+  // Source-of-truth state operations (atomic reads/writes)
+  // ===================================================================
+
+  /** Push a reading to a sensor's sliding window (atomic, max 8 elements). */
+  async pushToWindow(motorSensorId: number, isAnomalous: boolean): Promise<boolean[]> {
+    const key = `state:window:${motorSensorId}`;
+    await this.redis.rpush(key, isAnomalous ? '1' : '0');
+    await this.redis.ltrim(key, -8, -1);
+    await this.redis.expire(key, 600);
+    const raw = await this.redis.lrange(key, 0, -1);
+    return raw.map((v) => v === '1');
+  }
+
+  /** Get a sensor's current sliding window. */
+  async getWindow(motorSensorId: number): Promise<boolean[]> {
+    const key = `state:window:${motorSensorId}`;
+    const raw = await this.redis.lrange(key, 0, -1);
+    return raw.map((v) => v === '1');
+  }
+
+  /** Clear a sensor's sliding window. */
+  async clearWindow(motorSensorId: number): Promise<void> {
+    await this.redis.del(`state:window:${motorSensorId}`);
+  }
+
+  /** Get auto-restart-used flag for a motor (returns false if not set). */
+  async getAutoRestartUsed(motorId: number): Promise<boolean> {
+    const val = await this.redis.get(`state:auto_restart:${motorId}`);
+    return val === '1';
+  }
+
+  /** Get escalation timer expiry for a motor (null if no active timer). */
+  async getEscalationExpiry(motorId: number): Promise<number | null> {
+    const val = await this.redis.get(`state:escalation:${motorId}`);
+    return val ? parseInt(val, 10) : null;
+  }
+
+  /** Get a single stuck tracker for a sensor. */
+  async getStuckTracker(motorSensorId: number): Promise<{ value: number; count: number }> {
+    const key = `state:stuck:${motorSensorId}`;
+    const data = await this.redis.hgetall(key);
+    if (!data || !data.value) return { value: NaN, count: 0 };
+    return { value: parseFloat(data.value), count: parseInt(data.count, 10) };
+  }
+
+  /** Get sensor auto-restart-used flag. */
+  async getSensorAutoRestartUsed(motorSensorId: number): Promise<boolean> {
+    const val = await this.redis.get(`state:sensor_auto_restart:${motorSensorId}`);
+    return val === '1';
+  }
 }

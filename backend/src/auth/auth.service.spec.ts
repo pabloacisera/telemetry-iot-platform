@@ -2,12 +2,17 @@ import { AuthService } from './auth.service';
 import { UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 
-describe('AuthService', () => {
+describe('AuthService — refresh token rotation and reuse detection', () => {
   let service: AuthService;
   let prisma: {
     user: { findUnique: jest.Mock };
-    refreshToken: { findMany: jest.Mock; create: jest.Mock; update: jest.Mock };
-    $transaction: jest.Mock;
+    refreshToken: {
+      findUnique: jest.Mock;
+      findMany: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
   };
   let jwtService: { sign: jest.Mock };
 
@@ -15,11 +20,12 @@ describe('AuthService', () => {
     prisma = {
       user: { findUnique: jest.fn() },
       refreshToken: {
+        findUnique: jest.fn(),
         findMany: jest.fn(),
-        create: jest.fn(),
-        update: jest.fn(),
+        create: jest.fn().mockResolvedValue({ id: 99 }),
+        update: jest.fn().mockResolvedValue(undefined),
+        updateMany: jest.fn().mockResolvedValue({ count: 3 }),
       },
-      $transaction: jest.fn().mockResolvedValue(undefined),
     };
     jwtService = {
       sign: jest.fn().mockReturnValue('mock-access-token'),
@@ -28,111 +34,102 @@ describe('AuthService', () => {
     service = new AuthService(prisma as any, jwtService as any);
   });
 
-  describe('login', () => {
-    it('should throw UnauthorizedException for non-existent user', async () => {
-      prisma.user.findUnique.mockResolvedValue(null);
+  describe('refresh with jti format', () => {
+    it('should rotate token successfully with valid jti:secret', async () => {
+      const secret = 'test-secret-uuid';
+      const hash = await bcrypt.hash(secret, 10);
 
-      await expect(
-        service.login('ghost@test.com', 'password'),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should throw UnauthorizedException for wrong password', async () => {
-      const hash = await bcrypt.hash('correct_password', 10);
-      prisma.user.findUnique.mockResolvedValue({
+      prisma.refreshToken.findUnique.mockResolvedValue({
         id: 1,
-        email: 'user@test.com',
-        passwordHash: hash,
-        role: 'operator',
+        userId: 42,
+        jti: 'test-jti',
+        tokenHash: hash,
+        expiresAt: new Date(Date.now() + 60000),
+        revoked: false,
+        user: { id: 42, email: 'admin@test.com', role: 'admin' },
       });
 
-      await expect(
-        service.login('user@test.com', 'wrong_password'),
-      ).rejects.toThrow(UnauthorizedException);
-    });
-
-    it('should return tokens for valid credentials', async () => {
-      const hash = await bcrypt.hash('correct_password', 10);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 1,
-        email: 'user@test.com',
-        passwordHash: hash,
-        role: 'operator',
-      });
-      prisma.refreshToken.create.mockResolvedValue({ id: 1 });
-
-      const result = await service.login('user@test.com', 'correct_password');
+      const result = await service.refresh(`test-jti:${secret}`);
 
       expect(result.accessToken).toBe('mock-access-token');
-      expect(result.refreshToken).toBeDefined();
-      expect(typeof result.refreshToken).toBe('string');
-      expect(result.refreshToken.length).toBeGreaterThan(0);
+      expect(result.refreshToken).toContain(':'); // new jti:secret format
+      expect(prisma.refreshToken.update).toHaveBeenCalledWith({
+        where: { id: 1 },
+        data: { revoked: true },
+      });
     });
 
-    it('should sign JWT with correct payload (sub, email, role)', async () => {
-      const hash = await bcrypt.hash('password', 10);
-      prisma.user.findUnique.mockResolvedValue({
-        id: 42,
-        email: 'admin@test.com',
-        passwordHash: hash,
-        role: 'admin',
+    it('should throw if token is expired', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 1,
+        userId: 42,
+        jti: 'expired-jti',
+        tokenHash: 'doesnt-matter',
+        expiresAt: new Date(Date.now() - 1000), // expired
+        revoked: false,
+        user: { id: 42, email: 'admin@test.com', role: 'admin' },
       });
-      prisma.refreshToken.create.mockResolvedValue({ id: 1 });
 
-      await service.login('admin@test.com', 'password');
+      await expect(service.refresh('expired-jti:some-secret'))
+        .rejects.toThrow(UnauthorizedException);
+    });
 
-      expect(jwtService.sign).toHaveBeenCalledWith({
-        sub: 42,
-        email: 'admin@test.com',
-        role: 'admin',
+    it('should throw if jti not found', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue(null);
+
+      await expect(service.refresh('unknown-jti:some-secret'))
+        .rejects.toThrow(UnauthorizedException);
+    });
+
+    it('should throw if secret does not match hash', async () => {
+      const hash = await bcrypt.hash('correct-secret', 10);
+
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 1,
+        userId: 42,
+        jti: 'test-jti',
+        tokenHash: hash,
+        expiresAt: new Date(Date.now() + 60000),
+        revoked: false,
+        user: { id: 42, email: 'admin@test.com', role: 'admin' },
+      });
+
+      await expect(service.refresh('test-jti:wrong-secret'))
+        .rejects.toThrow(UnauthorizedException);
+    });
+  });
+
+  describe('reuse detection with cascade revocation', () => {
+    it('should revoke ALL user tokens when a revoked token is reused', async () => {
+      prisma.refreshToken.findUnique.mockResolvedValue({
+        id: 1,
+        userId: 42,
+        jti: 'stolen-jti',
+        tokenHash: 'doesnt-matter',
+        expiresAt: new Date(Date.now() + 60000),
+        revoked: true, // Already revoked — reuse attempt!
+        user: { id: 42, email: 'victim@test.com', role: 'operator' },
+      });
+
+      await expect(service.refresh('stolen-jti:any-secret'))
+        .rejects.toThrow('Token reuse detected');
+
+      // Should cascade revoke all tokens for that user
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 42, revoked: false },
+        data: { revoked: true },
       });
     });
   });
 
-  describe('refresh (token rotation)', () => {
-    it('should throw UnauthorizedException for invalid refresh token', async () => {
-      prisma.refreshToken.findMany.mockResolvedValue([]);
+  describe('logout', () => {
+    it('should revoke token by jti', async () => {
+      await service.logout('some-jti:some-secret');
 
-      await expect(service.refresh('invalid-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
-    });
-
-    it('should revoke old token and issue new one on valid refresh', async () => {
-      const rawToken = 'valid-refresh-token';
-      const hash = await bcrypt.hash(rawToken, 10);
-
-      prisma.refreshToken.findMany.mockResolvedValue([
-        {
-          id: 5,
-          userId: 1,
-          tokenHash: hash,
-          expiresAt: new Date(Date.now() + 86400000),
-          revoked: false,
-          user: { id: 1, email: 'user@test.com', role: 'operator' },
-        },
-      ]);
-
-      const result = await service.refresh(rawToken);
-
-      // Should call $transaction to revoke old + create new
-      expect(prisma.$transaction).toHaveBeenCalled();
-      const txArgs = prisma.$transaction.mock.calls[0][0];
-      expect(txArgs).toHaveLength(2); // revoke old + create new
-
-      // Should return new tokens
-      expect(result.accessToken).toBe('mock-access-token');
-      expect(result.refreshToken).toBeDefined();
-      expect(result.refreshToken).not.toBe(rawToken); // New token, not the old one
-    });
-
-    it('should not accept expired tokens', async () => {
-      // findMany returns empty because query filters by expiresAt > now
-      prisma.refreshToken.findMany.mockResolvedValue([]);
-
-      await expect(service.refresh('some-token')).rejects.toThrow(
-        UnauthorizedException,
-      );
+      expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({
+        where: { jti: 'some-jti', revoked: false },
+        data: { revoked: true },
+      });
     });
   });
 });

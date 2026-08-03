@@ -7,6 +7,9 @@ import { CacheService } from '../cache';
 /**
  * Sensor fault detection — independent from motor evaluation.
  *
+ * ARCHITECTURE: Redis is the source of truth for stuck trackers and
+ * auto-restart flags. Multiple instances can evaluate concurrently.
+ *
  * Detects 3 fault types:
  * - out_of_range: reading outside plausible_min/max.
  * - stuck: same value (rounded 1 decimal) for 20 consecutive readings (5 min).
@@ -21,22 +24,16 @@ import { CacheService } from '../cache';
 export class SensorEvaluationService {
   private readonly logger = new Logger(SensorEvaluationService.name);
 
-  /** Stuck detection: motor_sensor_id → { value, count }. */
-  private stuckTrackers: Map<number, { value: number; count: number }> = new Map();
-
-  /** In-memory sensor status cache. */
+  /** In-memory sensor status cache (updated by transitions). */
   private sensorStatuses: Map<number, string> = new Map();
 
-  /** Motor → sensor IDs mapping (shared reference from init). */
+  /** Motor → sensor IDs mapping (static metadata from DB). */
   private motorSensorIds: Map<number, number[]> = new Map();
 
   /** Sensor metadata: motor_sensor_id → { motorId, sensorType }. */
   private sensorMeta: Map<number, { motorId: number; sensorType: string }> = new Map();
 
-  /** Track whether a sensor already used its auto-restart this episode. */
-  private autoRestartUsed: Map<number, boolean> = new Map();
-
-  /** Active restart timers: motor_sensor_id → timeout handle. */
+  /** Active restart timers (local — restored from Redis on boot). */
   private restartTimers: Map<number, NodeJS.Timeout> = new Map();
 
   constructor(
@@ -46,7 +43,7 @@ export class SensorEvaluationService {
     private readonly cache: CacheService,
   ) {}
 
-  /** Initialize internal state from loaded metadata and restore from Redis. */
+  /** Initialize from DB metadata. */
   async init(
     sensorStatuses: Map<number, string>,
     motorSensorIds: Map<number, number[]>,
@@ -57,40 +54,6 @@ export class SensorEvaluationService {
     if (sensorMeta) {
       this.sensorMeta = sensorMeta;
     }
-
-    for (const sensorIds of motorSensorIds.values()) {
-      for (const id of sensorIds) {
-        this.stuckTrackers.set(id, { value: NaN, count: 0 });
-      }
-    }
-
-    // Restore state from Redis
-    await this.restoreState();
-  }
-
-  /** Restore persisted state from Redis. */
-  private async restoreState(): Promise<void> {
-    try {
-      const savedStuck = await this.cache.restoreStuckTrackers();
-      for (const [sensorId, tracker] of savedStuck) {
-        if (this.stuckTrackers.has(sensorId)) {
-          this.stuckTrackers.set(sensorId, tracker);
-        }
-      }
-
-      const savedAutoRestart = await this.cache.restoreSensorAutoRestartUsed();
-      for (const [sensorId, used] of savedAutoRestart) {
-        this.autoRestartUsed.set(sensorId, used);
-      }
-
-      if (savedStuck.size > 0 || savedAutoRestart.size > 0) {
-        this.logger.log(
-          `Sensor state restored: ${savedStuck.size} stuck trackers, ${savedAutoRestart.size} auto-restart flags`,
-        );
-      }
-    } catch (err) {
-      this.logger.warn(`Failed to restore sensor state from Redis: ${(err as Error).message}`);
-    }
   }
 
   /** Get current sensor status from in-memory cache. */
@@ -98,7 +61,7 @@ export class SensorEvaluationService {
     return this.sensorStatuses.get(motorSensorId) || 'ok';
   }
 
-  /** Check if sensor is in fault (readings should be excluded from motor evaluation). */
+  /** Check if sensor is in fault (readings excluded from motor evaluation). */
   isInFault(motorSensorId: number): boolean {
     const status = this.sensorStatuses.get(motorSensorId);
     return status === 'fault' || status === 'fault_persistent';
@@ -106,7 +69,7 @@ export class SensorEvaluationService {
 
   /**
    * Evaluate a reading for sensor fault conditions.
-   * Should NOT be called if motor is in shutting_down/restarting.
+   * Reads stuck tracker from Redis (source of truth).
    */
   async evaluateReading(
     motorSensorId: number,
@@ -123,9 +86,8 @@ export class SensorEvaluationService {
       return;
     }
 
-    // Stuck check: same rounded value for 20 consecutive readings
-    const tracker = this.stuckTrackers.get(motorSensorId);
-    if (!tracker) return;
+    // Stuck check: read tracker from Redis (single key, O(1))
+    const tracker = await this.cache.getStuckTracker(motorSensorId);
 
     const rounded = Math.round(value * 10) / 10;
     if (rounded === tracker.value) {
@@ -139,8 +101,7 @@ export class SensorEvaluationService {
       tracker.count = 1;
     }
 
-    // Persist stuck tracker (fire-and-forget)
-    this.cache.persistStuckTracker(motorSensorId, tracker.value, tracker.count).catch(() => {});
+    await this.cache.persistStuckTracker(motorSensorId, tracker.value, tracker.count);
   }
 
   /** Handle sensor disconnection (called when grace window expires). */
@@ -152,8 +113,8 @@ export class SensorEvaluationService {
   }
 
   /**
-   * Manually restart a sensor that is in fault_persistent.
-   * Called from the controller when an operator requests reactivation.
+   * Manually restart a sensor in fault/fault_persistent.
+   * Called from controller when operator requests reactivation.
    */
   async manualRestart(motorSensorId: number): Promise<boolean> {
     const status = this.sensorStatuses.get(motorSensorId);
@@ -163,7 +124,6 @@ export class SensorEvaluationService {
     if (!meta) return false;
 
     await this.restoreSensor(motorSensorId, meta.motorId, meta.sensorType);
-    this.autoRestartUsed.delete(motorSensorId);
     await this.cache.persistSensorAutoRestartUsed(motorSensorId, false);
     return true;
   }
@@ -174,11 +134,14 @@ export class SensorEvaluationService {
     motorId: number,
     faultType: string,
   ): Promise<void> {
-    // If auto-restart was already used this episode → fault_persistent
-    if (this.autoRestartUsed.get(motorSensorId)) {
+    // Check auto-restart flag from Redis (source of truth)
+    const alreadyRestarted = await this.cache.getSensorAutoRestartUsed(motorSensorId);
+
+    if (alreadyRestarted) {
+      // Recurrence after auto-restart → fault_persistent
       await this.statusTransition.transitionSensor(motorSensorId, motorId, 'fault_persistent');
       await this.statusTransition.createSensorFault(motorSensorId, faultType);
-      await this.statusTransition.createAlert(motorId, `sensor_fault_persistent`);
+      await this.statusTransition.createAlert(motorId, 'sensor_fault_persistent');
       this.sensorStatuses.set(motorSensorId, 'fault_persistent');
 
       this.logger.warn(
@@ -187,25 +150,22 @@ export class SensorEvaluationService {
       return;
     }
 
-    // First fault: mark as fault, create alert, schedule auto-restart
+    // First fault: mark, alert, schedule auto-restart
     await this.statusTransition.transitionSensor(motorSensorId, motorId, 'fault');
     await this.statusTransition.createSensorFault(motorSensorId, faultType);
-    await this.statusTransition.createAlert(motorId, `sensor_fault`);
+    await this.statusTransition.createAlert(motorId, 'sensor_fault');
     this.sensorStatuses.set(motorSensorId, 'fault');
 
     this.logger.warn(
       `Sensor ${motorSensorId} (motor ${motorId}): fault → ${faultType}, auto-restart in 5s`,
     );
 
-    // Schedule auto-restart in 5 seconds
     this.scheduleAutoRestart(motorSensorId, motorId);
-
     await this.checkWidespreadFailure(motorId);
   }
 
   /** Schedule automatic sensor restart after 5 seconds. */
   private scheduleAutoRestart(motorSensorId: number, motorId: number): void {
-    // Clear any existing timer
     const existing = this.restartTimers.get(motorSensorId);
     if (existing) clearTimeout(existing);
 
@@ -215,16 +175,12 @@ export class SensorEvaluationService {
     const timer = setTimeout(async () => {
       this.restartTimers.delete(motorSensorId);
 
-      // Only restart if still in fault (not already manually handled)
       if (this.sensorStatuses.get(motorSensorId) !== 'fault') return;
 
-      this.autoRestartUsed.set(motorSensorId, true);
-      await this.restoreSensor(motorSensorId, motorId, sensorType);
       await this.cache.persistSensorAutoRestartUsed(motorSensorId, true);
+      await this.restoreSensor(motorSensorId, motorId, sensorType);
 
-      this.logger.log(
-        `Sensor ${motorSensorId} (motor ${motorId}): auto-restarted`,
-      );
+      this.logger.log(`Sensor ${motorSensorId} (motor ${motorId}): auto-restarted`);
     }, 5_000);
 
     this.restartTimers.set(motorSensorId, timer);
@@ -240,11 +196,11 @@ export class SensorEvaluationService {
     await this.statusTransition.transitionSensor(motorSensorId, motorId, 'ok');
     this.sensorStatuses.set(motorSensorId, 'ok');
 
-    // Reset stuck tracker
-    this.stuckTrackers.set(motorSensorId, { value: NaN, count: 0 });
+    // Reset stuck tracker in Redis
+    await this.cache.persistStuckTracker(motorSensorId, NaN, 0);
   }
 
-  /** If all 3 sensors of a motor are in fault → motor transitions to under_review. */
+  /** If all 3 sensors of a motor are in fault → motor to under_review. */
   private async checkWidespreadFailure(motorId: number): Promise<void> {
     const sensorIds = this.motorSensorIds.get(motorId) || [];
     if (sensorIds.length !== 3) return;
