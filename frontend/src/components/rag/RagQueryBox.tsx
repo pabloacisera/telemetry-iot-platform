@@ -3,15 +3,15 @@ import type { FormEvent } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch, RootState } from '../../store';
 import { askRag } from '../../store/rag.slice';
+import Markdown from 'react-markdown';
 
 interface RagQueryBoxProps {
   motorId?: number;
 }
 
 /**
- * RAG query box — allows operators to ask natural language questions.
- * Displays the conversation history and handles the 3 response types:
- * healthy data, unreliable sensor, no data / redirect to Grafana.
+ * RAG chat box — sends questions to the backend LLM and renders Markdown responses.
+ * Supports tables, bold, lists, and inline code from the assistant.
  */
 export function RagQueryBox({ motorId }: RagQueryBoxProps) {
   const dispatch = useDispatch<AppDispatch>();
@@ -32,7 +32,13 @@ export function RagQueryBox({ motorId }: RagQueryBoxProps) {
         {messages.map((msg, i) => (
           <div key={i} className={`rag-message rag-${msg.role}`}>
             <strong>{msg.role === 'user' ? 'Tú' : 'Asistente'}:</strong>
-            <p>{msg.content}</p>
+            {msg.role === 'assistant' ? (
+              <div className="rag-markdown">
+                <Markdown>{msg.content}</Markdown>
+              </div>
+            ) : (
+              <p>{msg.content}</p>
+            )}
           </div>
         ))}
         {loading && <p className="rag-loading">Pensando...</p>}
