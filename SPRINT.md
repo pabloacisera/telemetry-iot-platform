@@ -18,7 +18,7 @@
 
 3. ~~**Reinicios de sensores**~~ ✅ Implementado: auto-restart a los 5s, si recurre → `fault_persistent`. Alerta creada en ambos casos. Endpoint manual: `POST /motors/:id/sensors/:sensorId/restart`.
 
-4. ~~**Estado en memoria → Redis (riesgo de negocio)**~~ ✅ Implementado: windows, escalation timers, auto-restart flags y stuck trackers se persisten en Redis con write-through. Al reiniciar el proceso, se restauran automáticamente.
+4. ~~**Estado en memoria → Redis (riesgo de negocio)**~~ ✅ Implementado: Redis como fuente de verdad única. Lock distribuido por motor. Múltiples instancias pueden evaluar sin conflictos. Timers locales con restore desde Redis. Keyspace notifications documentadas en `docs/23-scaling-guide.md` como siguiente paso.
 
 5. ~~**Refresh token — revocación en cascada**~~ ✅ Implementado: si se detecta reuso de un token revocado, se revocan TODOS los tokens del usuario.
 
