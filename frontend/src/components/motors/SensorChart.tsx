@@ -15,9 +15,9 @@ interface SensorChartProps {
 
 /** Label mapping for display. */
 const LABELS: Record<string, string> = {
-  temperature: 'Temperature (°C)',
-  vibration: 'Vibration (mm/s)',
-  current: 'Current (A)',
+  temperature: 'Temperatura (°C)',
+  vibration: 'Vibración (mm/s)',
+  current: 'Corriente (A)',
 };
 
 /**
@@ -42,8 +42,8 @@ export function SensorChart({ sensor, sensorType }: SensorChartProps) {
           <XAxis dataKey="time" tick={{ fontSize: 10 }} />
           <YAxis domain={['auto', 'auto']} />
           <Tooltip />
-          <ReferenceLine y={sensor.warningMax} stroke="#f59e0b" strokeDasharray="5 5" label="Warning" />
-          <ReferenceLine y={sensor.criticalMax} stroke="#ef4444" strokeDasharray="3 3" label="Critical" />
+          <ReferenceLine y={sensor.warningMax} stroke="#f59e0b" strokeDasharray="5 5" label="Advertencia" />
+          <ReferenceLine y={sensor.criticalMax} stroke="#ef4444" strokeDasharray="3 3" label="Crítico" />
           <Line
             type="monotone"
             dataKey="value"

@@ -1,6 +1,8 @@
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useSelector } from 'react-redux';
-import { RootState } from '../store';
+import { useSelector, useDispatch } from 'react-redux';
+import type { RootState } from '../store';
+import { joinMotorRoom, leaveMotorRoom } from '../store/socket.middleware';
 import { SensorChart } from '../components/motors/SensorChart';
 import { StatusBadge } from '../components/motors/StatusBadge';
 import { RestartCountdown } from '../components/motors/RestartCountdown';
@@ -9,18 +11,25 @@ import { RoleGate } from '../components/routes/RoleGate';
 
 /**
  * Motor detail page — shows 3 real-time charts (one per sensor).
- * Each chart has its own independent status badge (ok/fault).
- * During 'restarting', shows the countdown timer.
- * Provides stop/restart controls for admin/operator roles.
+ * Joins the motor's WebSocket room on mount, leaves on unmount.
  */
 export function MotorDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
   const motorId = Number(id);
   const motor = useSelector((state: RootState) => state.motors.byId[motorId]);
 
+  // Join/leave motor room for targeted WebSocket events
+  useEffect(() => {
+    dispatch(joinMotorRoom(motorId));
+    return () => {
+      dispatch(leaveMotorRoom(motorId));
+    };
+  }, [dispatch, motorId]);
+
   if (!motor) {
-    return <p>Motor not found</p>;
+    return <p>Motor no encontrado</p>;
   }
 
   return (
@@ -30,9 +39,9 @@ export function MotorDetailPage() {
           type="button"
           className="back-button"
           onClick={() => navigate('/dashboard')}
-          aria-label="Back to dashboard"
+          aria-label="Volver al panel"
         >
-          &larr; Back
+          &larr; Volver
         </button>
         <h1>{motor.code} — {motor.name}</h1>
         <StatusBadge status={motor.status} />
@@ -45,10 +54,10 @@ export function MotorDetailPage() {
       <RoleGate minimumRole="operator">
         <div className="motor-controls">
           <button type="button" className="btn-stop" disabled>
-            Stop
+            Detener
           </button>
           <button type="button" className="btn-restart" disabled>
-            Restart
+            Reiniciar
           </button>
         </div>
       </RoleGate>

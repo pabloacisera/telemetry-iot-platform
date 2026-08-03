@@ -1,4 +1,5 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
+import type { PayloadAction } from '@reduxjs/toolkit';
 import { api } from '../services/api';
 
 interface AuthState {
@@ -99,7 +100,11 @@ export const authSlice = createSlice({
         state.loading = false;
         state.error = action.payload as string;
       })
+      .addCase(refreshToken.pending, (state) => {
+        state.loading = true;
+      })
       .addCase(refreshToken.fulfilled, (state, action) => {
+        state.loading = false;
         state.accessToken = action.payload.accessToken;
         const payload = decodeJwtPayload(action.payload.accessToken);
         if (payload) {
@@ -107,6 +112,7 @@ export const authSlice = createSlice({
         }
       })
       .addCase(refreshToken.rejected, (state) => {
+        state.loading = false;
         state.user = null;
         state.accessToken = null;
       });

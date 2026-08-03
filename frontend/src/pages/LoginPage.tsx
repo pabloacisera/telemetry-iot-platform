@@ -1,6 +1,7 @@
-import { useState, FormEvent } from 'react';
+import { useState } from 'react';
+import type { FormEvent } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { AppDispatch, RootState } from '../store';
+import type { AppDispatch, RootState } from '../store';
 import { login } from '../store/auth.slice';
 
 /**
@@ -20,26 +21,26 @@ export function LoginPage() {
 
   return (
     <div className="login-container">
-      <h1>Telemetry Platform</h1>
+      <h1>Plataforma de Telemetría</h1>
       <form onSubmit={handleSubmit} className="login-form">
         <input
           type="email"
-          placeholder="Email"
+          placeholder="Correo electrónico"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          aria-label="Email"
+          aria-label="Correo electrónico"
         />
         <input
           type="password"
-          placeholder="Password"
+          placeholder="Contraseña"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          aria-label="Password"
+          aria-label="Contraseña"
         />
         <button type="submit" disabled={loading}>
-          {loading ? 'Logging in...' : 'Login'}
+          {loading ? 'Ingresando...' : 'Ingresar'}
         </button>
         {error && <p className="error" role="alert">{error}</p>}
       </form>

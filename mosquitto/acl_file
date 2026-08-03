@@ -158,6 +158,7 @@ topic read qa/motor/15/inject-fault
 # --- Backend service ---
 
 user backend_service
+topic read $SYS/#
 topic read plant/motor/+/telemetry
 topic read plant/motor/+/status
 topic read plant/motor/+/restart-progress

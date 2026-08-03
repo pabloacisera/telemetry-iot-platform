@@ -1,5 +1,5 @@
 import { useSelector } from 'react-redux';
-import { RootState } from '../../store';
+import type { RootState } from '../../store';
 
 interface RestartCountdownProps {
   motorId: number;
@@ -19,7 +19,7 @@ export function RestartCountdown({ motorId }: RestartCountdownProps) {
 
   return (
     <div className="restart-countdown" role="status" aria-live="polite">
-      <span className="countdown-label">Restarting...</span>
+      <span className="countdown-label">Reiniciando...</span>
       <span className="countdown-value">{seconds}s</span>
     </div>
   );

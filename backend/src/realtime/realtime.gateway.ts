@@ -10,9 +10,12 @@ import { Server, Socket } from 'socket.io';
 /**
  * WebSocket gateway for real-time event emission to connected frontends.
  *
- * Clients join rooms by motor_id to receive targeted updates.
+ * Lifecycle:
+ * - On connect: client is auto-joined to 'dashboard' room (receives all telemetry).
+ * - Client can emit 'join-motor' to join a specific motor room (for detail page).
+ * - Client can emit 'leave-motor' to leave.
+ *
  * Emitted events: telemetry, status-change, alert, restart-progress.
- * This is a push-only gateway — the frontend subscribes, never sends commands here.
  */
 @WebSocketGateway({ cors: { origin: '*' } })
 export class RealtimeGateway
@@ -23,9 +26,18 @@ export class RealtimeGateway
 
   private readonly logger = new Logger(RealtimeGateway.name);
 
-  /** Log new WebSocket client connections. */
+  /** On connect: join client to 'dashboard' room + listen for room commands. */
   handleConnection(client: Socket): void {
     this.logger.debug(`Client connected: ${client.id}`);
+    client.join('dashboard');
+
+    client.on('join-motor', (motorId: number) => {
+      client.join(`motor:${motorId}`);
+    });
+
+    client.on('leave-motor', (motorId: number) => {
+      client.leave(`motor:${motorId}`);
+    });
   }
 
   /** Log WebSocket client disconnections. */
@@ -33,24 +45,27 @@ export class RealtimeGateway
     this.logger.debug(`Client disconnected: ${client.id}`);
   }
 
-  /** Emit a telemetry reading to the motor's room. */
+  /** Emit a telemetry reading to dashboard (all) AND motor room. */
   emitTelemetry(motorId: number, data: Record<string, unknown>): void {
+    this.server.to('dashboard').emit('telemetry', data);
     this.server.to(`motor:${motorId}`).emit('telemetry', data);
   }
 
-  /** Emit a motor or sensor status change to the motor's room. */
+  /** Emit a motor or sensor status change to dashboard AND motor room. */
   emitStatusChange(motorId: number, data: Record<string, unknown>): void {
+    this.server.to('dashboard').emit('status-change', data);
     this.server.to(`motor:${motorId}`).emit('status-change', data);
   }
 
-  /** Emit an alert to the motor's room AND broadcast globally (for alert banner). */
+  /** Emit an alert globally (for alert banner) AND to motor room. */
   emitAlert(motorId: number, data: Record<string, unknown>): void {
+    this.server.to('dashboard').emit('alert', data);
     this.server.to(`motor:${motorId}`).emit('alert', data);
-    this.server.emit('alert', data);
   }
 
-  /** Emit restart countdown progress to the motor's room. */
+  /** Emit restart countdown progress to dashboard AND motor room. */
   emitRestartProgress(motorId: number, data: Record<string, unknown>): void {
+    this.server.to('dashboard').emit('restart-progress', data);
     this.server.to(`motor:${motorId}`).emit('restart-progress', data);
   }
 }
