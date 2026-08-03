@@ -46,7 +46,7 @@ export function SensorChart({ sensor, sensorType }: SensorChartProps) {
         <h3>{LABELS[sensorType] || sensorType}</h3>
         <StatusBadge status={sensor.status} />
       </div>
-      {data.length === 0 ? (
+      {data.length < 3 ? (
         <p className="chart-empty">Esperando datos...</p>
       ) : (
         <ResponsiveContainer width="100%" height={200}>

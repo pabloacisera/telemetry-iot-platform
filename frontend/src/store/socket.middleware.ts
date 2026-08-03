@@ -85,6 +85,13 @@ export const socketMiddleware: Middleware = (storeAPI) => {
     });
 
     socket.on('telemetry', (data: TelemetryEvent) => {
+      // Don't add telemetry to chart if motor is restarting
+      const state = storeAPI.getState();
+      const motor = state.motors.byId[data.motorId];
+      if (motor && (motor.status === 'restarting' || motor.status === 'shutting_down')) {
+        return;
+      }
+
       storeAPI.dispatch(telemetryReceived({
         motorId: data.motorId,
         sensorType: data.sensorType,

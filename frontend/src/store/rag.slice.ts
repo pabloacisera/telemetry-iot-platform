@@ -22,7 +22,10 @@ const initialState: RagState = {
 export const askRag = createAsyncThunk(
   'rag/ask',
   async (params: { motorId?: number; question: string }) => {
-    const response = await api.post('/rag/query', params);
+    const response = await api.post('/rag/query', {
+      motor_id: params.motorId,
+      question: params.question,
+    });
     return response.data as { answer: string };
   },
 );
@@ -61,7 +64,7 @@ export const ragSlice = createSlice({
         state.loading = false;
         state.messages.push({
           role: 'assistant',
-          content: 'Error: could not get a response. Please try again.',
+          content: 'Error: no se pudo obtener respuesta. Intentá de nuevo.',
           timestamp: new Date().toISOString(),
         });
       });

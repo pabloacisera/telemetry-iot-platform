@@ -36,6 +36,8 @@ async def handle_motor_command(
     if action == "stop":
         logger.info(f"Motor {sim.motor_id}: received STOP command")
         sim.state = "powered_off"
+        # Publish offline status so backend knows immediately
+        await sim._publish_status(client, "offline")
         await _publish_ack(client, sim.motor_id, "cmd/ack", request_id)
 
     elif action == "restart":
@@ -115,6 +117,8 @@ async def _restart_sequence(
 
     # Phase 3: powered back on
     sim.state = "powered_on"
+    # Publish online status
+    await sim._publish_status(client, "online")
     await _publish_ack(client, sim.motor_id, "cmd/ack", request_id)
     logger.info(f"Motor {sim.motor_id}: restart complete, back online")
 

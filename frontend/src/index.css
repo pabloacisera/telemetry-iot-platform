@@ -178,3 +178,22 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 .ref-manual-shutdown { background: rgba(107,114,128,0.15); color: #4b5563; }
 .ref-fault { background: rgba(239,68,68,0.15); color: #dc2626; }
 .ref-fault-persistent { background: rgba(153,27,27,0.15); color: #991b1b; }
+
+/* Loading spinner */
+.spinner-container {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: 3rem 0; gap: 1rem;
+}
+.spinner-svg { width: 48px; height: 48px; animation: spinner-rotate 1.2s linear infinite; }
+.spinner-track { stroke: var(--border); }
+.spinner-head { stroke: var(--accent); stroke-dasharray: 80, 200; stroke-dashoffset: 0; animation: spinner-dash 1.5s ease-in-out infinite; }
+.spinner-text { color: var(--gray); font-size: 0.875rem; }
+
+@keyframes spinner-rotate {
+  100% { transform: rotate(360deg); }
+}
+@keyframes spinner-dash {
+  0% { stroke-dasharray: 1, 200; stroke-dashoffset: 0; }
+  50% { stroke-dasharray: 80, 200; stroke-dashoffset: -35; }
+  100% { stroke-dasharray: 80, 200; stroke-dashoffset: -125; }
+}

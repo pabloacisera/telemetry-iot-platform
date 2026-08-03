@@ -59,6 +59,29 @@ export class MotorEvaluationService {
     return this.motorStatuses.get(motorId) || 'healthy';
   }
 
+  /** Update in-memory motor status (called when external events change status). */
+  setMotorStatus(motorId: number, status: string): void {
+    this.motorStatuses.set(motorId, status);
+  }
+
+  /** Reset the sliding window for all sensors of a motor (called after restart). */
+  resetWindow(motorId: number): void {
+    const sensorIds = this.motorSensorIds.get(motorId);
+    if (sensorIds) {
+      for (const id of sensorIds) {
+        this.windows.set(id, []);
+      }
+    }
+    // Reset auto-restart counter for this motor
+    this.autoRestartUsed.delete(motorId);
+    // Clear escalation timer if any
+    const timer = this.escalationTimers.get(motorId);
+    if (timer) {
+      clearTimeout(timer);
+      this.escalationTimers.delete(motorId);
+    }
+  }
+
   /** Push a reading result into the sliding window and evaluate transitions. */
   async pushReading(
     motorSensorId: number,

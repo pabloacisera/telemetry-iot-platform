@@ -5,6 +5,7 @@ import { plainToInstance } from 'class-transformer';
 import * as mqtt from 'mqtt';
 import { TelemetryEventDto } from './dto/telemetry-event.dto';
 import { TelemetryEvaluationService } from './telemetry-evaluation.service';
+import { StatusTransitionService } from './status-transition.service';
 import { RealtimeGateway } from '../realtime';
 import { PrismaService } from '../prisma';
 
@@ -34,6 +35,7 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly configService: ConfigService,
     private readonly evaluationService: TelemetryEvaluationService,
+    private readonly statusTransition: StatusTransitionService,
     private readonly realtime: RealtimeGateway,
     private readonly prisma: PrismaService,
   ) {}
@@ -113,9 +115,9 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     if (topic.includes('/telemetry')) {
       await this.handleTelemetry(data);
     } else if (topic.includes('/status') && !topic.includes('/cmd')) {
-      this.handleStatus(data);
+      await this.handleStatus(data);
     } else if (topic.includes('/restart-progress')) {
-      this.handleRestartProgress(data);
+      await this.handleRestartProgress(data);
     }
   }
 
@@ -145,23 +147,66 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Handle LWT online/offline status messages. */
-  private handleStatus(data: Record<string, unknown>): void {
+  private async handleStatus(data: Record<string, unknown>): Promise<void> {
     const motorId = data.motor_id as number;
     const state = data.state as string;
 
+    if (!motorId) return;
+
     if (state === 'offline') {
-      this.startDisconnectionTimer(motorId);
+      // Get current motor status from DB for proper transition
+      const motor = await this.prisma.motor.findUnique({ where: { id: motorId } });
+      if (motor && motor.status !== 'manual_shutdown') {
+        await this.statusTransition.transitionMotor(
+          motorId,
+          motor.status,
+          'manual_shutdown',
+        );
+        // Update in-memory status in evaluation service
+        this.evaluationService.setMotorStatus(motorId, 'manual_shutdown');
+      }
     } else if (state === 'online') {
       this.clearDisconnectionTimer(motorId);
+      // Only transition to healthy if motor was manually stopped or restarting
+      const motor = await this.prisma.motor.findUnique({ where: { id: motorId } });
+      if (motor && (motor.status === 'manual_shutdown' || motor.status === 'restarting')) {
+        await this.statusTransition.transitionMotor(
+          motorId,
+          motor.status,
+          'healthy',
+        );
+        // Update in-memory status + reset evaluation window
+        this.evaluationService.setMotorStatus(motorId, 'healthy');
+        this.evaluationService.resetWindow(motorId);
+      }
     }
   }
 
-  /** Forward restart-progress to WebSocket clients. */
-  private handleRestartProgress(data: Record<string, unknown>): void {
+  /** Forward restart-progress to WebSocket clients and update motor status. */
+  private async handleRestartProgress(data: Record<string, unknown>): Promise<void> {
     const motorId = data.motor_id as number;
-    if (motorId) {
-      this.realtime.emitRestartProgress(motorId, data);
+    const secondsRemaining = data.seconds_remaining as number;
+
+    if (!motorId) return;
+
+    // On first progress event, transition to 'restarting' in DB
+    if (secondsRemaining >= 99) {
+      const motor = await this.prisma.motor.findUnique({ where: { id: motorId } });
+      if (motor && motor.status !== 'restarting') {
+        await this.statusTransition.transitionMotor(
+          motorId,
+          motor.status,
+          'restarting',
+        );
+      }
     }
+
+    this.realtime.emitRestartProgress(motorId, {
+      motorId,
+      secondsRemaining,
+    });
+
+    // When countdown finishes, the 'online' status message will trigger transition to 'healthy'
   }
 
   /** Start grace window timer (20s WiFi / 5s LAN). */
