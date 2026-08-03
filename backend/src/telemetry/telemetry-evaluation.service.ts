@@ -79,7 +79,13 @@ export class TelemetryEvaluationService implements OnModuleInit {
     }
 
     this.motorEval.init(motorStatuses, motorSensorIds);
-    this.sensorEval.init(sensorStatuses, motorSensorIds);
+
+    // Build simplified sensor meta for SensorEvaluationService
+    const sensorMetaSimple = new Map<number, { motorId: number; sensorType: string }>();
+    for (const sensor of sensors) {
+      sensorMetaSimple.set(sensor.id, { motorId: sensor.motorId, sensorType: sensor.sensorType });
+    }
+    this.sensorEval.init(sensorStatuses, motorSensorIds, sensorMetaSimple);
 
     this.logger.log(
       `Initialized: ${this.sensorMeta.size} sensors, ${motorStatuses.size} motors`,

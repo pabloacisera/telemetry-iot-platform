@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { StatusTransitionService } from './status-transition.service';
 import { MotorEvaluationService } from './motor-evaluation.service';
+import { CommandService } from '../command/command.service';
 
 /**
  * Sensor fault detection — independent from motor evaluation.
@@ -28,18 +29,32 @@ export class SensorEvaluationService {
   /** Motor → sensor IDs mapping (shared reference from init). */
   private motorSensorIds: Map<number, number[]> = new Map();
 
+  /** Sensor metadata: motor_sensor_id → { motorId, sensorType }. */
+  private sensorMeta: Map<number, { motorId: number; sensorType: string }> = new Map();
+
+  /** Track whether a sensor already used its auto-restart this episode. */
+  private autoRestartUsed: Map<number, boolean> = new Map();
+
+  /** Active restart timers: motor_sensor_id → timeout handle. */
+  private restartTimers: Map<number, NodeJS.Timeout> = new Map();
+
   constructor(
     private readonly statusTransition: StatusTransitionService,
     private readonly motorEvaluation: MotorEvaluationService,
+    private readonly commandService: CommandService,
   ) {}
 
   /** Initialize internal state from loaded metadata. */
   init(
     sensorStatuses: Map<number, string>,
     motorSensorIds: Map<number, number[]>,
+    sensorMeta?: Map<number, { motorId: number; sensorType: string }>,
   ): void {
     this.sensorStatuses = sensorStatuses;
     this.motorSensorIds = motorSensorIds;
+    if (sensorMeta) {
+      this.sensorMeta = sensorMeta;
+    }
 
     for (const sensorIds of motorSensorIds.values()) {
       for (const id of sensorIds) {
@@ -103,21 +118,95 @@ export class SensorEvaluationService {
     await this.triggerFault(motorSensorId, motorId, 'disconnected');
   }
 
-  /** Transition sensor to fault and check for widespread failure. */
+  /**
+   * Manually restart a sensor that is in fault_persistent.
+   * Called from the controller when an operator requests reactivation.
+   */
+  async manualRestart(motorSensorId: number): Promise<boolean> {
+    const status = this.sensorStatuses.get(motorSensorId);
+    if (status !== 'fault' && status !== 'fault_persistent') return false;
+
+    const meta = this.sensorMeta.get(motorSensorId);
+    if (!meta) return false;
+
+    await this.restoreSensor(motorSensorId, meta.motorId, meta.sensorType);
+    this.autoRestartUsed.delete(motorSensorId);
+    return true;
+  }
+
+  /** Transition sensor to fault, create alert, and schedule auto-restart. */
   private async triggerFault(
     motorSensorId: number,
     motorId: number,
     faultType: string,
   ): Promise<void> {
+    // If auto-restart was already used this episode → fault_persistent
+    if (this.autoRestartUsed.get(motorSensorId)) {
+      await this.statusTransition.transitionSensor(motorSensorId, motorId, 'fault_persistent');
+      await this.statusTransition.createSensorFault(motorSensorId, faultType);
+      await this.statusTransition.createAlert(motorId, `sensor_fault_persistent`);
+      this.sensorStatuses.set(motorSensorId, 'fault_persistent');
+
+      this.logger.warn(
+        `Sensor ${motorSensorId} (motor ${motorId}): fault_persistent → ${faultType} (requires manual intervention)`,
+      );
+      return;
+    }
+
+    // First fault: mark as fault, create alert, schedule auto-restart
     await this.statusTransition.transitionSensor(motorSensorId, motorId, 'fault');
     await this.statusTransition.createSensorFault(motorSensorId, faultType);
+    await this.statusTransition.createAlert(motorId, `sensor_fault`);
     this.sensorStatuses.set(motorSensorId, 'fault');
 
     this.logger.warn(
-      `Sensor ${motorSensorId} (motor ${motorId}): fault → ${faultType}`,
+      `Sensor ${motorSensorId} (motor ${motorId}): fault → ${faultType}, auto-restart in 5s`,
     );
 
+    // Schedule auto-restart in 5 seconds
+    this.scheduleAutoRestart(motorSensorId, motorId);
+
     await this.checkWidespreadFailure(motorId);
+  }
+
+  /** Schedule automatic sensor restart after 5 seconds. */
+  private scheduleAutoRestart(motorSensorId: number, motorId: number): void {
+    // Clear any existing timer
+    const existing = this.restartTimers.get(motorSensorId);
+    if (existing) clearTimeout(existing);
+
+    const meta = this.sensorMeta.get(motorSensorId);
+    const sensorType = meta?.sensorType || 'unknown';
+
+    const timer = setTimeout(async () => {
+      this.restartTimers.delete(motorSensorId);
+
+      // Only restart if still in fault (not already manually handled)
+      if (this.sensorStatuses.get(motorSensorId) !== 'fault') return;
+
+      this.autoRestartUsed.set(motorSensorId, true);
+      await this.restoreSensor(motorSensorId, motorId, sensorType);
+
+      this.logger.log(
+        `Sensor ${motorSensorId} (motor ${motorId}): auto-restarted`,
+      );
+    }, 5_000);
+
+    this.restartTimers.set(motorSensorId, timer);
+  }
+
+  /** Restore sensor to ok status and publish restart command. */
+  private async restoreSensor(
+    motorSensorId: number,
+    motorId: number,
+    sensorType: string,
+  ): Promise<void> {
+    await this.commandService.publishSensorRestart(motorId, sensorType);
+    await this.statusTransition.transitionSensor(motorSensorId, motorId, 'ok');
+    this.sensorStatuses.set(motorSensorId, 'ok');
+
+    // Reset stuck tracker
+    this.stuckTrackers.set(motorSensorId, { value: NaN, count: 0 });
   }
 
   /** If all 3 sensors of a motor are in fault → motor transitions to under_review. */

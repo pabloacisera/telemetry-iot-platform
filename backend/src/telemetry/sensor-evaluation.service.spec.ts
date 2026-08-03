@@ -24,6 +24,7 @@ describe('SensorEvaluationService', () => {
     service = new SensorEvaluationService(
       statusTransition as any,
       motorEvaluation as any,
+      { publishSensorRestart: jest.fn() } as any,
     );
 
     // Motor 1 with sensors 1, 2, 3
@@ -33,7 +34,12 @@ describe('SensorEvaluationService', () => {
       [3, 'ok'],
     ]);
     const motorSensorIds = new Map<number, number[]>([[1, [1, 2, 3]]]);
-    service.init(sensorStatuses, motorSensorIds);
+    const sensorMeta = new Map<number, { motorId: number; sensorType: string }>([
+      [1, { motorId: 1, sensorType: 'temperature' }],
+      [2, { motorId: 1, sensorType: 'vibration' }],
+      [3, { motorId: 1, sensorType: 'current' }],
+    ]);
+    service.init(sensorStatuses, motorSensorIds, sensorMeta);
   });
 
   describe('out_of_range detection', () => {
