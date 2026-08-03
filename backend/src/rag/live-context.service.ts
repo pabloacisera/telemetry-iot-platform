@@ -8,10 +8,15 @@ interface SensorSnapshot {
   value: number | null;
   status: string;
   recordedAt: string | null;
+  healthyMax: number;
+  warningMax: number;
+  criticalMax: number;
 }
 
 interface LiveContext {
   motorId: number;
+  motorCode: string;
+  motorName: string;
   motorStatus: string;
   sensors: SensorSnapshot[];
   recentAlerts: { type: string; triggeredAt: Date; resolvedAt: Date | null }[];
@@ -24,7 +29,7 @@ interface LiveContext {
 
 /**
  * Builds the live context blocks for a specific motor:
- * 1. Redis snapshot (last value + status per sensor)
+ * 1. Redis snapshot (last value + status + thresholds per sensor)
  * 2. Recent alerts and status changes from MySQL
  */
 @Injectable()
@@ -45,16 +50,19 @@ export class LiveContextService {
 
     if (!motor) return null;
 
-    // Block 1: Redis snapshot per sensor
+    // Block 1: Redis snapshot per sensor WITH thresholds
     const sensors: SensorSnapshot[] = [];
     for (const ms of motor.sensors) {
       const snapshot = await this.cacheService.getSnapshot(ms.id);
       sensors.push({
         motorSensorId: ms.id,
         sensorType: ms.sensorType,
-        value: snapshot?.value ?? null,
+        value: snapshot?.value ?? ms.lastValue ?? null,
         status: ms.status,
         recordedAt: snapshot?.recordedAt ?? null,
+        healthyMax: ms.healthyMax,
+        warningMax: ms.warningMax,
+        criticalMax: ms.criticalMax,
       });
     }
 
@@ -83,6 +91,8 @@ export class LiveContextService {
 
     return {
       motorId,
+      motorCode: motor.code,
+      motorName: motor.name,
       motorStatus: motor.status,
       sensors,
       recentAlerts,
@@ -90,50 +100,92 @@ export class LiveContextService {
     };
   }
 
+  /** Format a Date to a friendly Spanish string. */
+  private formatDate(date: Date): string {
+    return date.toLocaleString('es-AR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  }
+
   /** Format live context into a human-readable string for the LLM prompt. */
   formatForPrompt(ctx: LiveContext): string {
     const lines: string[] = [];
 
-    lines.push(`## Motor ${ctx.motorId} — Current status: ${ctx.motorStatus}`);
+    const statusMap: Record<string, string> = {
+      healthy: 'Saludable',
+      under_review: 'En revisión',
+      shutting_down: 'Deteniendo',
+      restarting: 'Reiniciando',
+      disabled: 'Deshabilitado',
+      manual_shutdown: 'Parada manual',
+    };
+
+    const sensorStatusMap: Record<string, string> = {
+      ok: 'Normal',
+      fault: 'Falla',
+      fault_persistent: 'Falla persistente',
+    };
+
+    lines.push(`## Motor ${ctx.motorCode} (${ctx.motorName}) — Estado actual: ${statusMap[ctx.motorStatus] || ctx.motorStatus}`);
     lines.push('');
-    lines.push('### Sensors (live snapshot from Redis)');
+    lines.push('### Sensores (datos en tiempo real)');
 
     for (const s of ctx.sensors) {
+      const unit = s.sensorType === 'temperature' ? '°C' : s.sensorType === 'vibration' ? 'mm/s' : 'A';
+      const sensorName = s.sensorType === 'temperature' ? 'Temperatura' : s.sensorType === 'vibration' ? 'Vibración' : 'Corriente';
+      const sStatus = sensorStatusMap[s.status] || s.status;
+
       if (s.value === null) {
-        lines.push(
-          `- ${s.sensorType}: NO RECENT DATA (sensor status: ${s.status})`,
-        );
-      } else if (['fault', 'fault_persistent', 'stuck'].includes(s.status)) {
-        lines.push(
-          `- ${s.sensorType}: ${s.value} [⚠️ UNRELIABLE — sensor status: ${s.status}] (at ${s.recordedAt})`,
-        );
+        lines.push(`- ${sensorName}: SIN DATOS RECIENTES (estado: ${sStatus})`);
       } else {
-        lines.push(
-          `- ${s.sensorType}: ${s.value} (status: ${s.status}, at ${s.recordedAt})`,
-        );
+        let evaluation = '';
+        if (s.value > s.criticalMax) {
+          evaluation = '⚠️ CRÍTICO (supera umbral crítico)';
+        } else if (s.value > s.warningMax) {
+          evaluation = '⚠️ EN ZONA DE ADVERTENCIA';
+        } else if (s.value > s.healthyMax) {
+          evaluation = '↗️ Por encima del máximo saludable';
+        } else {
+          evaluation = '✅ Normal';
+        }
+
+        if (['fault', 'fault_persistent'].includes(s.status)) {
+          evaluation = `🔴 SENSOR EN FALLA (valor no confiable)`;
+        }
+
+        lines.push(`- ${sensorName}: ${s.value.toFixed(1)} ${unit} — ${evaluation}`);
+        lines.push(`  Umbrales: normal ≤${s.healthyMax} ${unit} | advertencia ≤${s.warningMax} ${unit} | crítico >${s.criticalMax} ${unit}`);
       }
     }
 
     if (ctx.recentAlerts.length > 0) {
       lines.push('');
-      lines.push('### Recent alerts (last 4 hours)');
+      lines.push('### Alertas recientes (últimas 4 horas)');
+      const alertLabels: Record<string, string> = {
+        warning: 'Advertencia',
+        forced_restart: 'Reinicio forzado',
+        disabled: 'Deshabilitado',
+        sensor_failure_widespread: 'Falla general de sensores',
+      };
       for (const a of ctx.recentAlerts) {
-        const resolved = a.resolvedAt
-          ? `resolved at ${a.resolvedAt.toISOString()}`
-          : 'ACTIVE';
-        lines.push(
-          `- ${a.type} at ${a.triggeredAt.toISOString()} — ${resolved}`,
-        );
+        const label = alertLabels[a.type] || a.type;
+        const resolved = a.resolvedAt ? `resuelta ${this.formatDate(a.resolvedAt)}` : 'ACTIVA';
+        lines.push(`- ${label} — ${this.formatDate(a.triggeredAt)} — ${resolved}`);
       }
     }
 
     if (ctx.recentStatusChanges.length > 0) {
       lines.push('');
-      lines.push('### Recent status changes (last 4 hours)');
+      lines.push('### Cambios de estado recientes');
       for (const sc of ctx.recentStatusChanges) {
-        lines.push(
-          `- ${sc.fromStatus} → ${sc.toStatus} at ${sc.changedAt.toISOString()}`,
-        );
+        const from = statusMap[sc.fromStatus || ''] || sc.fromStatus || '?';
+        const to = statusMap[sc.toStatus || ''] || sc.toStatus || '?';
+        lines.push(`- ${from} → ${to} — ${this.formatDate(sc.changedAt)}`);
       }
     }
 

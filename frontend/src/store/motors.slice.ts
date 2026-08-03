@@ -69,6 +69,19 @@ export const fetchMotors = createAsyncThunk('motors/fetchAll', async () => {
   return response.data;
 });
 
+/** Fetch a single motor with recent readings for chart pre-population. */
+export const fetchMotorDetail = createAsyncThunk(
+  'motors/fetchDetail',
+  async (motorId: number) => {
+    const response = await api.get<MotorApiResponse & {
+      sensors: Array<MotorApiResponse['sensors'][number] & {
+        recentValues?: { value: number; timestamp: string }[];
+      }>;
+    }>(`/motors/${motorId}`);
+    return response.data;
+  },
+);
+
 /**
  * Motors slice — dictionary of motor_id → motor data.
  * Updated via REST (initial load) and WebSocket (real-time).
@@ -115,6 +128,10 @@ export const motorsSlice = createSlice({
 
       if (toStatus) {
         motor.status = toStatus;
+        // Clear countdown when motor leaves restarting state
+        if (toStatus !== 'restarting') {
+          motor.restartSecondsRemaining = null;
+        }
       }
 
       if (sensorStatus && motorSensorId) {
@@ -130,7 +147,8 @@ export const motorsSlice = createSlice({
     }>) {
       const motor = state.byId[action.payload.motorId];
       if (!motor) return;
-      motor.restartSecondsRemaining = action.payload.secondsRemaining;
+      const seconds = action.payload.secondsRemaining;
+      motor.restartSecondsRemaining = seconds > 0 ? seconds : null;
     },
   },
   extraReducers: (builder) => {
@@ -155,6 +173,22 @@ export const motorsSlice = createSlice({
       .addCase(fetchMotors.rejected, (state, action) => {
         state.loading = false;
         state.error = action.error.message || 'Failed to fetch motors';
+      })
+      .addCase(fetchMotorDetail.fulfilled, (state, action) => {
+        const motor = action.payload;
+        const sensors: Record<string, SensorData> = {};
+        for (const s of motor.sensors) {
+          sensors[s.sensorType] = {
+            ...s,
+            recentValues: s.recentValues || [],
+          };
+        }
+        const existing = state.byId[motor.id];
+        state.byId[motor.id] = {
+          ...motor,
+          sensors,
+          restartSecondsRemaining: existing?.restartSecondsRemaining ?? null,
+        };
       });
   },
 });

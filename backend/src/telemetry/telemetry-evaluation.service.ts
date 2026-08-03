@@ -150,4 +150,14 @@ export class TelemetryEvaluationService implements OnModuleInit {
     if (!meta) return;
     await this.sensorEval.onSensorDisconnected(motorSensorId, meta.motorId);
   }
+
+  /** Update in-memory motor status (called by consumer on manual stop/restart). */
+  setMotorStatus(motorId: number, status: string): void {
+    this.motorEval.setMotorStatus(motorId, status);
+  }
+
+  /** Reset evaluation window for a motor (called after restart completes). */
+  resetWindow(motorId: number): void {
+    this.motorEval.resetWindow(motorId);
+  }
 }

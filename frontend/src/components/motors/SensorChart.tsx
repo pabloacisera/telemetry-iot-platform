@@ -20,6 +20,12 @@ const LABELS: Record<string, string> = {
   current: 'Corriente (A)',
 };
 
+/** Format time to HH:MM:SS */
+function formatTime(isoString: string): string {
+  const d = new Date(isoString);
+  return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
 /**
  * Real-time sensor chart (Recharts LineChart).
  * Shows the ring buffer of ~50 recent values with threshold reference lines.
@@ -27,9 +33,12 @@ const LABELS: Record<string, string> = {
  */
 export function SensorChart({ sensor, sensorType }: SensorChartProps) {
   const data = sensor.recentValues.map((v) => ({
-    time: new Date(v.timestamp).toLocaleTimeString(),
+    time: formatTime(v.timestamp),
     value: v.value,
   }));
+
+  // Show max 6 ticks on X axis to avoid crowding
+  const tickInterval = data.length > 6 ? Math.floor(data.length / 6) : 0;
 
   return (
     <div className="sensor-chart">
@@ -37,23 +46,44 @@ export function SensorChart({ sensor, sensorType }: SensorChartProps) {
         <h3>{LABELS[sensorType] || sensorType}</h3>
         <StatusBadge status={sensor.status} />
       </div>
-      <ResponsiveContainer width="100%" height={200}>
-        <LineChart data={data}>
-          <XAxis dataKey="time" tick={{ fontSize: 10 }} />
-          <YAxis domain={['auto', 'auto']} />
-          <Tooltip />
-          <ReferenceLine y={sensor.warningMax} stroke="#f59e0b" strokeDasharray="5 5" label="Advertencia" />
-          <ReferenceLine y={sensor.criticalMax} stroke="#ef4444" strokeDasharray="3 3" label="Crítico" />
-          <Line
-            type="monotone"
-            dataKey="value"
-            stroke="#3b82f6"
-            dot={false}
-            strokeWidth={2}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+      {data.length < 3 ? (
+        <p className="chart-empty">Esperando datos...</p>
+      ) : (
+        <ResponsiveContainer width="100%" height={200}>
+          <LineChart data={data} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+            <XAxis
+              dataKey="time"
+              tick={{ fontSize: 10 }}
+              interval={tickInterval}
+              angle={-30}
+              textAnchor="end"
+              height={40}
+            />
+            <YAxis domain={['auto', 'auto']} width={45} />
+            <Tooltip />
+            <ReferenceLine
+              y={sensor.warningMax}
+              stroke="#f59e0b"
+              strokeDasharray="5 5"
+              label={{ value: 'Adv.', position: 'right', fontSize: 10, fill: '#f59e0b' }}
+            />
+            <ReferenceLine
+              y={sensor.criticalMax}
+              stroke="#ef4444"
+              strokeDasharray="3 3"
+              label={{ value: 'Crít.', position: 'right', fontSize: 10, fill: '#ef4444' }}
+            />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke="#3b82f6"
+              dot={false}
+              strokeWidth={2}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
     </div>
   );
 }

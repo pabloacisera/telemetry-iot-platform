@@ -45,6 +45,12 @@ export class CacheService implements OnModuleDestroy {
       status,
       recorded_at: recordedAt.toISOString(),
     });
+
+    // Push to ring buffer (last 5 readings for instant chart load)
+    const historyKey = `motor_sensor:${motorSensorId}:recent`;
+    const entry = JSON.stringify({ value, timestamp: recordedAt.toISOString() });
+    await this.redis.rpush(historyKey, entry);
+    await this.redis.ltrim(historyKey, -5, -1); // keep only last 5
   }
 
   /** Get the live snapshot for a motor_sensor. */
@@ -87,5 +93,14 @@ export class CacheService implements OnModuleDestroy {
     }
 
     return result;
+  }
+
+  /** Get recent readings for a sensor (ring buffer, up to 5 points). */
+  async getRecentReadings(
+    motorSensorId: number,
+  ): Promise<{ value: number; timestamp: string }[]> {
+    const key = `motor_sensor:${motorSensorId}:recent`;
+    const entries = await this.redis.lrange(key, 0, -1);
+    return entries.map((e) => JSON.parse(e));
   }
 }

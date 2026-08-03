@@ -1,10 +1,11 @@
 import { useEffect } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
+import { Link } from 'react-router-dom';
 import type { AppDispatch, RootState } from '../store';
 import { fetchMotors } from '../store/motors.slice';
 import { MotorGrid } from '../components/motors/MotorGrid';
 import { AlertBanner } from '../components/alerts/AlertBanner';
-import { RagQueryBox } from '../components/rag/RagQueryBox';
+import { LoadingSpinner } from '../components/LoadingSpinner';
 
 /**
  * Main dashboard page — shows the grid of 15 motors and active alerts.
@@ -21,11 +22,15 @@ export function DashboardPage() {
   return (
     <div className="dashboard">
       <AlertBanner />
-      <h1>Vista General de Planta</h1>
-      {loading && <p>Cargando motores...</p>}
+      <div className="dashboard-header">
+        <h1>Vista General de Planta</h1>
+        <Link to="/referencia" className="ref-link">
+          📋 Referencia de estados
+        </Link>
+      </div>
+      {loading && <LoadingSpinner message="Cargando motores..." />}
       {error && <p className="error">{error}</p>}
-      <MotorGrid />
-      <RagQueryBox />
+      {!loading && <MotorGrid />}
     </div>
   );
 }

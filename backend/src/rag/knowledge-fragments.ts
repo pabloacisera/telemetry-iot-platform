@@ -164,4 +164,42 @@ export const KNOWLEDGE_FRAGMENTS = [
     topic: 'disabled_motor_procedure',
     source_reference: 'System operational procedures',
   },
+
+  // State reference for operators (Spanish context)
+  {
+    chunk_text:
+      'Los estados del motor son: "Saludable" (operación normal), "En revisión" (anomalía detectada, ' +
+      'el sistema espera 2 minutos antes de actuar), "Deteniendo" (comando de parada enviado), ' +
+      '"Reiniciando" (ciclo de 100 segundos), "Deshabilitado" (anomalía persistió tras reinicio, ' +
+      'requiere inspección física y reactivación manual), "Parada manual" (detenido por un operador).',
+    topic: 'motor_states_reference',
+    source_reference: 'Sistema de telemetría - Referencia de estados',
+  },
+  {
+    chunk_text:
+      'Los estados del sensor son: "Normal" (valores válidos), "Falla" (fuera de rango, atascado, ' +
+      'o desconectado — se reintentará automáticamente en 5 segundos), "Falla persistente" (el sensor ' +
+      'falló nuevamente tras reinicio automático, requiere reemplazo o recalibración manual). ' +
+      'Las lecturas de un sensor en falla NO participan en la evaluación de salud del motor.',
+    topic: 'sensor_states_reference',
+    source_reference: 'Sistema de telemetría - Referencia de estados',
+  },
+  {
+    chunk_text:
+      'Tipos de alerta: "Advertencia" se genera con 5/8 lecturas anómalas o 1 lectura crítica. ' +
+      '"Reinicio forzado" cuando el sistema reinicia automáticamente después de 2 minutos sin intervención. ' +
+      '"Deshabilitado" cuando la anomalía persiste post-reinicio. "Falla general de sensores" cuando ' +
+      'los 3 sensores del motor están en falla simultáneamente y no se puede evaluar su salud.',
+    topic: 'alert_types_reference',
+    source_reference: 'Sistema de telemetría - Referencia de estados',
+  },
+  {
+    chunk_text:
+      'Para detener un motor manualmente: el operador o admin presiona "Detener" en la vista de detalle ' +
+      'del motor. Solo está disponible si el motor está "Saludable" o "En revisión". Para reiniciar: ' +
+      'presionar "Reiniciar", disponible cuando el motor está "En revisión", "Parada manual" o "Deshabilitado". ' +
+      'Ambas acciones envían comandos MQTT al ESP32 correspondiente.',
+    topic: 'manual_commands_reference',
+    source_reference: 'Sistema de telemetría - Referencia de operación',
+  },
 ];

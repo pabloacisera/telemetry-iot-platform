@@ -70,6 +70,7 @@ export class MotorsService {
     const sensors = await Promise.all(
       motor.sensors.map(async (sensor) => {
         const snapshot = await this.cache.getSnapshot(sensor.id);
+        const recentValues = await this.cache.getRecentReadings(sensor.id);
         return {
           id: sensor.id,
           sensorType: sensor.sensorType,
@@ -79,6 +80,7 @@ export class MotorsService {
           criticalMax: sensor.criticalMax,
           lastValue: snapshot?.value ?? sensor.lastValue ?? null,
           lastReadingAt: snapshot?.recordedAt ?? sensor.lastReadingAt?.toISOString() ?? null,
+          recentValues,
         };
       }),
     );

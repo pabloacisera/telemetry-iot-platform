@@ -36,6 +36,11 @@ export const alertsSlice = createSlice({
       state.active = state.active.filter((a) => a.id !== action.payload);
     },
 
+    /** Dismiss an alert from the UI (hide, not resolve in backend). */
+    alertDismissed(state, action: PayloadAction<number>) {
+      state.active = state.active.filter((a) => a.id !== action.payload);
+    },
+
     /** Set initial alerts list (from REST on load). */
     setAlerts(state, action: PayloadAction<Alert[]>) {
       state.active = action.payload;
@@ -43,4 +48,4 @@ export const alertsSlice = createSlice({
   },
 });
 
-export const { alertReceived, alertResolved, setAlerts } = alertsSlice.actions;
+export const { alertReceived, alertResolved, alertDismissed, setAlerts } = alertsSlice.actions;
