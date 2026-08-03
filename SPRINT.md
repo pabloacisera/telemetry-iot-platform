@@ -42,12 +42,9 @@
 
 ## Pendientes — RAG
 
-12. **Formato de respuestas del RAG**
-    - Responder con tablas/listas cuando haya comparación temporal o datos numéricos.
-    - Comportamiento estándar (no solo cuando el operario lo pida).
+12. ~~**Formato de respuestas del RAG**~~ ✅ System prompt actualizado: tablas Markdown para datos numéricos, listas para acciones, negrita para valores críticos.
 
-13. **Renderizar Markdown en el RAG**
-    - Tablas/listas del LLM se vean como tablas reales en la UI.
+13. ~~**Renderizar Markdown en el RAG**~~ ✅ Instalado `react-markdown`, mensajes del asistente se renderizan con tablas, listas y formato real.
 
 ---
 
