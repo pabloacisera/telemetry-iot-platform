@@ -13,12 +13,22 @@ interface SensorSnapshot {
   criticalMax: number;
 }
 
+interface SensorReadingHistory {
+  sensorType: string;
+  readings: { value: number; recordedAt: Date }[];
+  avgValue: number | null;
+  minValue: number | null;
+  maxValue: number | null;
+  anomalyCount: number;
+}
+
 interface LiveContext {
   motorId: number;
   motorCode: string;
   motorName: string;
   motorStatus: string;
   sensors: SensorSnapshot[];
+  sensorHistory: SensorReadingHistory[];
   recentAlerts: { type: string; triggeredAt: Date; resolvedAt: Date | null }[];
   recentStatusChanges: {
     fromStatus: string | null;
@@ -30,11 +40,15 @@ interface LiveContext {
 /**
  * Builds the live context blocks for a specific motor:
  * 1. Redis snapshot (last value + status + thresholds per sensor)
- * 2. Recent alerts and status changes from MySQL
+ * 2. MySQL readings history (last 4 hours — aggregated stats + last 40 readings)
+ * 3. Recent alerts and status changes from MySQL
  */
 @Injectable()
 export class LiveContextService {
   private readonly logger = new Logger(LiveContextService.name);
+
+  /** Readings context window in hours. */
+  private readonly contextWindowHours = 4;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -49,6 +63,8 @@ export class LiveContextService {
     });
 
     if (!motor) return null;
+
+    const contextWindowStart = new Date(Date.now() - this.contextWindowHours * 60 * 60 * 1000);
 
     // Block 1: Redis snapshot per sensor WITH thresholds
     const sensors: SensorSnapshot[] = [];
@@ -66,23 +82,50 @@ export class LiveContextService {
       });
     }
 
-    // Block 2: Recent alerts (last 10, within last 4 hours)
-    const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000);
+    // Block 2: MySQL readings history (last 4 hours per sensor)
+    const sensorHistory: SensorReadingHistory[] = [];
+    for (const ms of motor.sensors) {
+      // Get last 40 readings (≈10 minutes of data at 15s intervals)
+      const readings = await this.prisma.reading.findMany({
+        where: {
+          motorSensorId: ms.id,
+          recordedAt: { gte: contextWindowStart },
+        },
+        orderBy: { recordedAt: 'desc' },
+        take: 40,
+        select: { value: true, recordedAt: true, isAnomalous: true },
+      });
+
+      // Compute aggregates
+      const values = readings.map((r) => r.value);
+      const anomalyCount = readings.filter((r) => r.isAnomalous).length;
+
+      sensorHistory.push({
+        sensorType: ms.sensorType,
+        readings: readings.reverse(), // chronological order
+        avgValue: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null,
+        minValue: values.length > 0 ? Math.min(...values) : null,
+        maxValue: values.length > 0 ? Math.max(...values) : null,
+        anomalyCount,
+      });
+    }
+
+    // Block 3: Recent alerts (last 10, within context window)
     const recentAlerts = await this.prisma.alert.findMany({
       where: {
         motorId,
-        triggeredAt: { gte: fourHoursAgo },
+        triggeredAt: { gte: contextWindowStart },
       },
       orderBy: { triggeredAt: 'desc' },
       take: 10,
       select: { type: true, triggeredAt: true, resolvedAt: true },
     });
 
-    // Block 3: Recent status changes (last 10, within last 4 hours)
+    // Block 4: Recent status changes (last 10, within context window)
     const recentStatusChanges = await this.prisma.motorStatusHistory.findMany({
       where: {
         motorId,
-        changedAt: { gte: fourHoursAgo },
+        changedAt: { gte: contextWindowStart },
       },
       orderBy: { changedAt: 'desc' },
       take: 10,
@@ -95,6 +138,7 @@ export class LiveContextService {
       motorName: motor.name,
       motorStatus: motor.status,
       sensors,
+      sensorHistory,
       recentAlerts,
       recentStatusChanges,
     };
@@ -106,6 +150,15 @@ export class LiveContextService {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+  }
+
+  /** Format time only (HH:MM:SS). */
+  private formatTime(date: Date): string {
+    return date.toLocaleTimeString('es-AR', {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
@@ -131,17 +184,29 @@ export class LiveContextService {
       fault_persistent: 'Falla persistente',
     };
 
+    const sensorNames: Record<string, string> = {
+      temperature: 'Temperatura',
+      vibration: 'Vibración',
+      current: 'Corriente',
+    };
+
+    const sensorUnits: Record<string, string> = {
+      temperature: '°C',
+      vibration: 'mm/s',
+      current: 'A',
+    };
+
     lines.push(`## Motor ${ctx.motorCode} (${ctx.motorName}) — Estado actual: ${statusMap[ctx.motorStatus] || ctx.motorStatus}`);
     lines.push('');
-    lines.push('### Sensores (datos en tiempo real)');
+    lines.push('### Sensores (valor actual)');
 
     for (const s of ctx.sensors) {
-      const unit = s.sensorType === 'temperature' ? '°C' : s.sensorType === 'vibration' ? 'mm/s' : 'A';
-      const sensorName = s.sensorType === 'temperature' ? 'Temperatura' : s.sensorType === 'vibration' ? 'Vibración' : 'Corriente';
+      const unit = sensorUnits[s.sensorType] || '';
+      const name = sensorNames[s.sensorType] || s.sensorType;
       const sStatus = sensorStatusMap[s.status] || s.status;
 
       if (s.value === null) {
-        lines.push(`- ${sensorName}: SIN DATOS RECIENTES (estado: ${sStatus})`);
+        lines.push(`- ${name}: SIN DATOS RECIENTES (estado: ${sStatus})`);
       } else {
         let evaluation = '';
         if (s.value > s.criticalMax) {
@@ -155,11 +220,36 @@ export class LiveContextService {
         }
 
         if (['fault', 'fault_persistent'].includes(s.status)) {
-          evaluation = `🔴 SENSOR EN FALLA (valor no confiable)`;
+          evaluation = '🔴 SENSOR EN FALLA (valor no confiable)';
         }
 
-        lines.push(`- ${sensorName}: ${s.value.toFixed(1)} ${unit} — ${evaluation}`);
+        lines.push(`- ${name}: ${s.value.toFixed(1)} ${unit} — ${evaluation}`);
         lines.push(`  Umbrales: normal ≤${s.healthyMax} ${unit} | advertencia ≤${s.warningMax} ${unit} | crítico >${s.criticalMax} ${unit}`);
+      }
+    }
+
+    // Sensor history (last 4 hours from MySQL)
+    if (ctx.sensorHistory.some((h) => h.readings.length > 0)) {
+      lines.push('');
+      lines.push(`### Historial de lecturas (últimas ${this.contextWindowHours} horas desde MySQL)`);
+
+      for (const h of ctx.sensorHistory) {
+        const name = sensorNames[h.sensorType] || h.sensorType;
+        const unit = sensorUnits[h.sensorType] || '';
+
+        if (h.readings.length === 0) {
+          lines.push(`- ${name}: sin lecturas en las últimas ${this.contextWindowHours} horas`);
+          continue;
+        }
+
+        lines.push(`- ${name}: ${h.readings.length} lecturas | promedio: ${h.avgValue?.toFixed(2)} ${unit} | mín: ${h.minValue?.toFixed(2)} ${unit} | máx: ${h.maxValue?.toFixed(2)} ${unit} | anomalías: ${h.anomalyCount}`);
+
+        // Include last 10 readings as a mini-table for the LLM
+        const last10 = h.readings.slice(-10);
+        const readingsStr = last10
+          .map((r) => `${this.formatTime(r.recordedAt)}=${r.value.toFixed(1)}${unit}`)
+          .join(', ');
+        lines.push(`  Últimas 10: [${readingsStr}]`);
       }
     }
 
