@@ -1,21 +1,20 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import * as bcrypt from 'bcrypt';
 import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma';
 
 /**
- * Core authentication service.
+ * Authentication service — login, token rotation, and logout.
  *
- * Handles:
- * - Login: validates credentials, issues access + refresh tokens.
- * - Refresh: rotates refresh token (old revoked, new issued in same transaction).
- * - Logout: revokes the current refresh token.
+ * Refresh token format: "jti:secret"
+ * - jti (UUID) is stored in plaintext for O(1) lookup via unique index.
+ * - secret is hashed with bcrypt for validation.
  *
- * Security properties:
- * - Refresh tokens are stored as bcrypt hashes (never plain text in DB).
- * - Rotation detects reuse attacks (used token → revoke all for that user).
- * - Access tokens are stateless JWTs (15min TTL, not stored server-side).
+ * Revocation policy (token reuse detection):
+ * - On valid refresh: revoke the old token, issue a new one.
+ * - If the presented token is already revoked (reuse detected): revoke ALL tokens
+ *   for that user as a security measure.
  */
 @Injectable()
 export class AuthService {
@@ -45,11 +44,78 @@ export class AuthService {
     return { accessToken, refreshToken };
   }
 
-  /** Rotate refresh token: validate old, revoke it, issue new. */
+  /**
+   * Rotate refresh token: validate old, revoke it, issue new.
+   * Implements reuse detection with cascade revocation.
+   */
   async refresh(oldToken: string): Promise<{ accessToken: string; refreshToken: string }> {
-    // Find all non-revoked, non-expired tokens and check against provided token
+    const { jti, secret } = this.parseToken(oldToken);
+
+    // Fast O(1) lookup by jti if available
+    if (jti) {
+      return this.refreshByJti(jti, secret);
+    }
+
+    // Fallback for legacy tokens without jti (old format)
+    return this.refreshLegacy(oldToken);
+  }
+
+  /** Refresh using jti-based O(1) lookup. */
+  private async refreshByJti(
+    jti: string,
+    secret: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
+    const record = await this.prisma.refreshToken.findUnique({
+      where: { jti },
+      include: { user: true },
+    });
+
+    if (!record || record.expiresAt < new Date()) {
+      throw new UnauthorizedException('Invalid or expired refresh token');
+    }
+
+    // Reuse detection: if already revoked, someone is trying to use a stolen token
+    if (record.revoked) {
+      // Cascade: revoke ALL tokens for this user
+      await this.prisma.refreshToken.updateMany({
+        where: { userId: record.userId, revoked: false },
+        data: { revoked: true },
+      });
+      this.logger.warn(
+        `Refresh token reuse detected for user ${record.user.email} — all tokens revoked`,
+      );
+      throw new UnauthorizedException('Token reuse detected. All sessions revoked.');
+    }
+
+    // Validate secret
+    const valid = await bcrypt.compare(secret, record.tokenHash);
+    if (!valid) {
+      throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    // Rotate: revoke old, issue new
+    const newRawToken = await this.createRefreshToken(record.userId);
+
+    await this.prisma.refreshToken.update({
+      where: { id: record.id },
+      data: { revoked: true },
+    });
+
+    const accessToken = this.generateAccessToken(
+      record.user.id,
+      record.user.email,
+      record.user.role,
+    );
+
+    return { accessToken, refreshToken: newRawToken };
+  }
+
+  /** Fallback refresh for tokens created before jti migration. O(n) with bcrypt. */
+  private async refreshLegacy(
+    oldToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const candidates = await this.prisma.refreshToken.findMany({
-      where: { revoked: false, expiresAt: { gt: new Date() } },
+      where: { revoked: false, expiresAt: { gt: new Date() }, jti: null },
       include: { user: true },
     });
 
@@ -66,24 +132,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Rotate: revoke old, issue new (in transaction)
-    const newRawToken = randomUUID();
-    const newHash = await bcrypt.hash(newRawToken, 10);
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+    // Rotate: revoke old, issue new (with jti this time)
+    await this.prisma.refreshToken.update({
+      where: { id: matchedRecord.id },
+      data: { revoked: true },
+    });
 
-    await this.prisma.$transaction([
-      this.prisma.refreshToken.update({
-        where: { id: matchedRecord.id },
-        data: { revoked: true },
-      }),
-      this.prisma.refreshToken.create({
-        data: {
-          userId: matchedRecord.userId,
-          tokenHash: newHash,
-          expiresAt,
-        },
-      }),
-    ]);
+    const newRawToken = await this.createRefreshToken(matchedRecord.userId);
 
     const accessToken = this.generateAccessToken(
       matchedRecord.user.id,
@@ -96,8 +151,19 @@ export class AuthService {
 
   /** Revoke a refresh token (logout). */
   async logout(token: string): Promise<void> {
+    const { jti } = this.parseToken(token);
+
+    if (jti) {
+      await this.prisma.refreshToken.updateMany({
+        where: { jti, revoked: false },
+        data: { revoked: true },
+      });
+      return;
+    }
+
+    // Legacy fallback
     const records = await this.prisma.refreshToken.findMany({
-      where: { revoked: false },
+      where: { revoked: false, jti: null },
     });
 
     for (const record of records) {
@@ -121,16 +187,27 @@ export class AuthService {
     });
   }
 
-  /** Create a new refresh token (hashed) in the database. */
+  /** Create a new refresh token with jti for O(1) lookup. Returns "jti:secret". */
   private async createRefreshToken(userId: number): Promise<string> {
-    const rawToken = randomUUID();
-    const hash = await bcrypt.hash(rawToken, 10);
+    const jti = randomUUID();
+    const secret = randomUUID();
+    const hash = await bcrypt.hash(secret, 10);
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
     await this.prisma.refreshToken.create({
-      data: { userId, tokenHash: hash, expiresAt },
+      data: { userId, jti, tokenHash: hash, expiresAt },
     });
 
-    return rawToken;
+    return `${jti}:${secret}`;
+  }
+
+  /** Parse a token into jti and secret. Handles both new ("jti:secret") and legacy (plain UUID) formats. */
+  private parseToken(token: string): { jti: string | null; secret: string } {
+    const colonIndex = token.indexOf(':');
+    if (colonIndex > 0 && colonIndex < token.length - 1) {
+      return { jti: token.slice(0, colonIndex), secret: token.slice(colonIndex + 1) };
+    }
+    // Legacy token (plain UUID without jti prefix)
+    return { jti: null, secret: token };
   }
 }
