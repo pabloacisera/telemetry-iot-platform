@@ -1,6 +1,8 @@
 import { AuthService } from './auth.service';
 import { UnauthorizedException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
+import type { PrismaService } from '../prisma';
+import type { JwtService } from '@nestjs/jwt';
 
 describe('AuthService — refresh token rotation and reuse detection', () => {
   let service: AuthService;
@@ -31,7 +33,10 @@ describe('AuthService — refresh token rotation and reuse detection', () => {
       sign: jest.fn().mockReturnValue('mock-access-token'),
     };
 
-    service = new AuthService(prisma as any, jwtService as any);
+    service = new AuthService(
+      prisma as unknown as PrismaService,
+      jwtService as unknown as JwtService,
+    );
   });
 
   describe('refresh with jti format', () => {
@@ -70,15 +75,17 @@ describe('AuthService — refresh token rotation and reuse detection', () => {
         user: { id: 42, email: 'admin@test.com', role: 'admin' },
       });
 
-      await expect(service.refresh('expired-jti:some-secret'))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(service.refresh('expired-jti:some-secret')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw if jti not found', async () => {
       prisma.refreshToken.findUnique.mockResolvedValue(null);
 
-      await expect(service.refresh('unknown-jti:some-secret'))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(service.refresh('unknown-jti:some-secret')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
 
     it('should throw if secret does not match hash', async () => {
@@ -94,8 +101,9 @@ describe('AuthService — refresh token rotation and reuse detection', () => {
         user: { id: 42, email: 'admin@test.com', role: 'admin' },
       });
 
-      await expect(service.refresh('test-jti:wrong-secret'))
-        .rejects.toThrow(UnauthorizedException);
+      await expect(service.refresh('test-jti:wrong-secret')).rejects.toThrow(
+        UnauthorizedException,
+      );
     });
   });
 
@@ -111,8 +119,9 @@ describe('AuthService — refresh token rotation and reuse detection', () => {
         user: { id: 42, email: 'victim@test.com', role: 'operator' },
       });
 
-      await expect(service.refresh('stolen-jti:any-secret'))
-        .rejects.toThrow('Token reuse detected');
+      await expect(service.refresh('stolen-jti:any-secret')).rejects.toThrow(
+        'Token reuse detected',
+      );
 
       // Should cascade revoke all tokens for that user
       expect(prisma.refreshToken.updateMany).toHaveBeenCalledWith({

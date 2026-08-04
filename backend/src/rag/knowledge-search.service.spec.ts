@@ -1,4 +1,7 @@
 import { KnowledgeSearchService } from './knowledge-search.service';
+import type { Model } from 'mongoose';
+import type { Embedding } from './embedding.schema';
+import type { ConfigService } from '@nestjs/config';
 
 describe('KnowledgeSearchService', () => {
   let service: KnowledgeSearchService;
@@ -6,8 +9,8 @@ describe('KnowledgeSearchService', () => {
   beforeEach(() => {
     // Create service with minimal mocks (we only test cosineSimilarity here)
     service = new KnowledgeSearchService(
-      {} as any, // embeddingModel not needed for similarity tests
-      { get: () => 0.65 } as any, // configService
+      {} as unknown as Model<Embedding>,
+      { get: () => 0.65 } as unknown as ConfigService,
     );
   });
 

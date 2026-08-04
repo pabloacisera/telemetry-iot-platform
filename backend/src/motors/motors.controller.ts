@@ -51,7 +51,7 @@ export class MotorsController {
   @UseGuards(RolesGuard)
   @Roles('admin', 'operator')
   async stop(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const user = (req as any).user;
+    const user = (req as unknown as { user: { email: string } }).user;
     const requestId = await this.commandService.publishStop(id, user.email);
     return { message: 'Comando de detención enviado', requestId };
   }
@@ -61,7 +61,7 @@ export class MotorsController {
   @UseGuards(RolesGuard)
   @Roles('admin', 'operator')
   async restart(@Param('id', ParseIntPipe) id: number, @Req() req: Request) {
-    const user = (req as any).user;
+    const user = (req as unknown as { user: { email: string } }).user;
     const requestId = await this.commandService.publishRestart(id, user.email);
     return { message: 'Comando de reinicio enviado', requestId };
   }

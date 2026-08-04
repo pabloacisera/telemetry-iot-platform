@@ -1,13 +1,18 @@
 import { RagQueryService } from './rag-query.service';
+import type { LiveContextService } from './live-context.service';
+import type { KnowledgeSearchService } from './knowledge-search.service';
+import type { ConfigService } from '@nestjs/config';
 
 describe('RagQueryService', () => {
   let service: RagQueryService;
 
   beforeEach(() => {
     service = new RagQueryService(
-      {} as any, // liveContextService
-      {} as any, // knowledgeSearchService
-      { get: (key: string, def?: string) => def ?? '' } as any, // configService
+      {} as unknown as LiveContextService,
+      {} as unknown as KnowledgeSearchService,
+      {
+        get: (key: string, def?: string) => def ?? '',
+      } as unknown as ConfigService,
     );
   });
 

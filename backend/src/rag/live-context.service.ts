@@ -64,7 +64,9 @@ export class LiveContextService {
 
     if (!motor) return null;
 
-    const contextWindowStart = new Date(Date.now() - this.contextWindowHours * 60 * 60 * 1000);
+    const contextWindowStart = new Date(
+      Date.now() - this.contextWindowHours * 60 * 60 * 1000,
+    );
 
     // Block 1: Redis snapshot per sensor WITH thresholds
     const sensors: SensorSnapshot[] = [];
@@ -103,7 +105,10 @@ export class LiveContextService {
       sensorHistory.push({
         sensorType: ms.sensorType,
         readings: readings.reverse(), // chronological order
-        avgValue: values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : null,
+        avgValue:
+          values.length > 0
+            ? values.reduce((a, b) => a + b, 0) / values.length
+            : null,
         minValue: values.length > 0 ? Math.min(...values) : null,
         maxValue: values.length > 0 ? Math.max(...values) : null,
         anomalyCount,
@@ -196,7 +201,9 @@ export class LiveContextService {
       current: 'A',
     };
 
-    lines.push(`## Motor ${ctx.motorCode} (${ctx.motorName}) — Estado actual: ${statusMap[ctx.motorStatus] || ctx.motorStatus}`);
+    lines.push(
+      `## Motor ${ctx.motorCode} (${ctx.motorName}) — Estado actual: ${statusMap[ctx.motorStatus] || ctx.motorStatus}`,
+    );
     lines.push('');
     lines.push('### Sensores (valor actual)');
 
@@ -224,30 +231,41 @@ export class LiveContextService {
         }
 
         lines.push(`- ${name}: ${s.value.toFixed(1)} ${unit} — ${evaluation}`);
-        lines.push(`  Umbrales: normal ≤${s.healthyMax} ${unit} | advertencia ≤${s.warningMax} ${unit} | crítico >${s.criticalMax} ${unit}`);
+        lines.push(
+          `  Umbrales: normal ≤${s.healthyMax} ${unit} | advertencia ≤${s.warningMax} ${unit} | crítico >${s.criticalMax} ${unit}`,
+        );
       }
     }
 
     // Sensor history (last 4 hours from MySQL)
     if (ctx.sensorHistory.some((h) => h.readings.length > 0)) {
       lines.push('');
-      lines.push(`### Historial de lecturas (últimas ${this.contextWindowHours} horas desde MySQL)`);
+      lines.push(
+        `### Historial de lecturas (últimas ${this.contextWindowHours} horas desde MySQL)`,
+      );
 
       for (const h of ctx.sensorHistory) {
         const name = sensorNames[h.sensorType] || h.sensorType;
         const unit = sensorUnits[h.sensorType] || '';
 
         if (h.readings.length === 0) {
-          lines.push(`- ${name}: sin lecturas en las últimas ${this.contextWindowHours} horas`);
+          lines.push(
+            `- ${name}: sin lecturas en las últimas ${this.contextWindowHours} horas`,
+          );
           continue;
         }
 
-        lines.push(`- ${name}: ${h.readings.length} lecturas | promedio: ${h.avgValue?.toFixed(2)} ${unit} | mín: ${h.minValue?.toFixed(2)} ${unit} | máx: ${h.maxValue?.toFixed(2)} ${unit} | anomalías: ${h.anomalyCount}`);
+        lines.push(
+          `- ${name}: ${h.readings.length} lecturas | promedio: ${h.avgValue?.toFixed(2)} ${unit} | mín: ${h.minValue?.toFixed(2)} ${unit} | máx: ${h.maxValue?.toFixed(2)} ${unit} | anomalías: ${h.anomalyCount}`,
+        );
 
         // Include last 10 readings as a mini-table for the LLM
         const last10 = h.readings.slice(-10);
         const readingsStr = last10
-          .map((r) => `${this.formatTime(r.recordedAt)}=${r.value.toFixed(1)}${unit}`)
+          .map(
+            (r) =>
+              `${this.formatTime(r.recordedAt)}=${r.value.toFixed(1)}${unit}`,
+          )
           .join(', ');
         lines.push(`  Últimas 10: [${readingsStr}]`);
       }
@@ -264,8 +282,12 @@ export class LiveContextService {
       };
       for (const a of ctx.recentAlerts) {
         const label = alertLabels[a.type] || a.type;
-        const resolved = a.resolvedAt ? `resuelta ${this.formatDate(a.resolvedAt)}` : 'ACTIVA';
-        lines.push(`- ${label} — ${this.formatDate(a.triggeredAt)} — ${resolved}`);
+        const resolved = a.resolvedAt
+          ? `resuelta ${this.formatDate(a.resolvedAt)}`
+          : 'ACTIVA';
+        lines.push(
+          `- ${label} — ${this.formatDate(a.triggeredAt)} — ${resolved}`,
+        );
       }
     }
 

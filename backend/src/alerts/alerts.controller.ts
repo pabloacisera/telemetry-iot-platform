@@ -45,7 +45,7 @@ export class AlertsController {
     @Req() req: Request,
     @Body() body: { note?: string },
   ) {
-    const user = (req as any).user as { userId: number };
+    const user = (req as unknown as { user: { userId: number } }).user;
     await this.alertsService.resolve(id, user.userId, body.note);
     return { message: 'Alert resolved' };
   }

@@ -1,4 +1,7 @@
 import { MotorEvaluationService } from './motor-evaluation.service';
+import type { StatusTransitionService } from './status-transition.service';
+import type { CommandService } from '../command/command.service';
+import type { CacheService } from '../cache';
 
 /** Helper to flush microtask queue (await pending Promises). */
 async function flushPromises(): Promise<void> {
@@ -29,7 +32,11 @@ describe('MotorEvaluationService', () => {
   let windowState: Map<number, boolean[]>;
 
   beforeEach(async () => {
-    windowState = new Map([[1, []], [2, []], [3, []]]);
+    windowState = new Map([
+      [1, []],
+      [2, []],
+      [3, []],
+    ]);
 
     statusTransition = {
       transitionMotor: jest.fn().mockResolvedValue(undefined),
@@ -41,13 +48,15 @@ describe('MotorEvaluationService', () => {
     cache = {
       acquireMotorLock: jest.fn().mockResolvedValue(true),
       releaseMotorLock: jest.fn().mockResolvedValue(undefined),
-      pushToWindow: jest.fn().mockImplementation((sensorId: number, isAnomalous: boolean) => {
-        const win = windowState.get(sensorId) || [];
-        win.push(isAnomalous);
-        if (win.length > 8) win.shift();
-        windowState.set(sensorId, win);
-        return Promise.resolve([...win]);
-      }),
+      pushToWindow: jest
+        .fn()
+        .mockImplementation((sensorId: number, isAnomalous: boolean) => {
+          const win = windowState.get(sensorId) || [];
+          win.push(isAnomalous);
+          if (win.length > 8) win.shift();
+          windowState.set(sensorId, win);
+          return Promise.resolve([...win]);
+        }),
       getWindow: jest.fn().mockImplementation((sensorId: number) => {
         return Promise.resolve(windowState.get(sensorId) || []);
       }),
@@ -63,9 +72,9 @@ describe('MotorEvaluationService', () => {
     };
 
     service = new MotorEvaluationService(
-      statusTransition as any,
-      commandService as any,
-      cache as any,
+      statusTransition as unknown as StatusTransitionService,
+      commandService as unknown as CommandService,
+      cache as unknown as CacheService,
     );
 
     const motorStatuses = new Map<number, string>([[1, 'healthy']]);
@@ -93,7 +102,9 @@ describe('MotorEvaluationService', () => {
         await service.pushReading(1, 1, true, false);
       }
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1, 'healthy', 'under_review',
+        1,
+        'healthy',
+        'under_review',
       );
       // No alert at this stage — only internal observation
       expect(statusTransition.createAlert).not.toHaveBeenCalled();
@@ -102,7 +113,9 @@ describe('MotorEvaluationService', () => {
     it('should trigger under_review immediately on a single critical reading', async () => {
       await service.pushReading(1, 1, true, true);
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1, 'healthy', 'under_review',
+        1,
+        'healthy',
+        'under_review',
       );
     });
 
@@ -147,7 +160,11 @@ describe('MotorEvaluationService', () => {
         await service.pushReading(2, 1, true, false);
         await service.pushReading(3, 1, true, false);
       }
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(1, 'healthy', 'under_review');
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        1,
+        'healthy',
+        'under_review',
+      );
       statusTransition.transitionMotor.mockClear();
 
       // Push 3 normals per sensor → window: [T,T,T,T,T,F,F,F] = 5/8 still anomalous (window capped to 8)
@@ -157,14 +174,22 @@ describe('MotorEvaluationService', () => {
         await service.pushReading(3, 1, false, false);
       }
       // At 8 entries: [T,T,T,T,T,F,F,F] = 5 anomalous → NOT recovered
-      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(1, 'under_review', 'healthy');
+      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
+        1,
+        'under_review',
+        'healthy',
+      );
 
       // 4th normal → shifts: [T,T,T,T,F,F,F,F] = 4 anomalous → recovered
       await service.pushReading(1, 1, false, false);
       await service.pushReading(2, 1, false, false);
       await service.pushReading(3, 1, false, false);
 
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(1, 'under_review', 'healthy');
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        1,
+        'under_review',
+        'healthy',
+      );
     });
 
     it('should NOT recover if any sensor still has >=5/8 anomalous', async () => {
@@ -176,12 +201,26 @@ describe('MotorEvaluationService', () => {
 
       // Sensor 1 normalizes but sensor 2 has anomalies
       cache.getWindow.mockImplementation((sensorId: number) => {
-        if (sensorId === 2) return Promise.resolve([true, true, true, true, true, false, false, false]);
+        if (sensorId === 2)
+          return Promise.resolve([
+            true,
+            true,
+            true,
+            true,
+            true,
+            false,
+            false,
+            false,
+          ]);
         return Promise.resolve(windowState.get(sensorId) || []);
       });
 
       await service.pushReading(1, 1, false, false);
-      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(1, 'under_review', 'healthy');
+      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
+        1,
+        'under_review',
+        'healthy',
+      );
     });
   });
 
@@ -201,7 +240,9 @@ describe('MotorEvaluationService', () => {
       await flushPromises();
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1, 'under_review', 'shutting_down',
+        1,
+        'under_review',
+        'shutting_down',
       );
 
       // Simulate restart complete → back to healthy
@@ -224,13 +265,15 @@ describe('MotorEvaluationService', () => {
       await flushPromises();
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1, 'under_review', 'disabled',
+        1,
+        'under_review',
+        'disabled',
       );
     });
   });
 
   describe('window reset on restart', () => {
-    it('should clear all sensor windows in Redis on restart', async () => {
+    it('should clear all sensor windows in Redis on restart', () => {
       service.onMotorRestarting(1);
       expect(cache.clearWindow).toHaveBeenCalledWith(1);
       expect(cache.clearWindow).toHaveBeenCalledWith(2);

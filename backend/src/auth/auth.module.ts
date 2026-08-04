@@ -20,8 +20,8 @@ import { RolesGuard } from './roles.guard';
       }),
     }),
     ThrottlerModule.forRoot([
-      { name: 'auth', ttl: 60000, limit: 5 },     // 5 req/min for auth routes
-      { name: 'general', ttl: 60000, limit: 60 },  // 60 req/min for everything else
+      { name: 'auth', ttl: 60000, limit: 5 }, // 5 req/min for auth routes
+      { name: 'general', ttl: 60000, limit: 60 }, // 60 req/min for everything else
     ]),
   ],
   controllers: [AuthController],

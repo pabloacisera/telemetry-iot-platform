@@ -41,7 +41,8 @@ export class MotorsService {
           warningMax: sensor.warningMax,
           criticalMax: sensor.criticalMax,
           lastValue: snapshot?.value ?? sensor.lastValue ?? null,
-          lastReadingAt: snapshot?.recordedAt ?? sensor.lastReadingAt?.toISOString() ?? null,
+          lastReadingAt:
+            snapshot?.recordedAt ?? sensor.lastReadingAt?.toISOString() ?? null,
         };
       }),
     }));
@@ -69,8 +70,8 @@ export class MotorsService {
 
     // Fetch all sensor snapshots and recent readings in parallel
     const [snapshots, recentReadingsMap] = await Promise.all([
-      Promise.all(motor.sensors.map(s => this.cache.getSnapshot(s.id))),
-      Promise.all(motor.sensors.map(s => this.cache.getRecentReadings(s.id))),
+      Promise.all(motor.sensors.map((s) => this.cache.getSnapshot(s.id))),
+      Promise.all(motor.sensors.map((s) => this.cache.getRecentReadings(s.id))),
     ]);
 
     const sensors = motor.sensors.map((sensor, i) => {
@@ -84,7 +85,8 @@ export class MotorsService {
         warningMax: sensor.warningMax,
         criticalMax: sensor.criticalMax,
         lastValue: snapshot?.value ?? sensor.lastValue ?? null,
-        lastReadingAt: snapshot?.recordedAt ?? sensor.lastReadingAt?.toISOString() ?? null,
+        lastReadingAt:
+          snapshot?.recordedAt ?? sensor.lastReadingAt?.toISOString() ?? null,
         recentValues,
       };
     });

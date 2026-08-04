@@ -47,14 +47,17 @@ export class AuthController {
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const oldToken = (req as any).cookies?.refresh_token;
+    const oldToken = (
+      req as unknown as { cookies?: { refresh_token?: string } }
+    ).cookies?.refresh_token;
     if (!oldToken) {
       return res.status(HttpStatus.UNAUTHORIZED).json({
         message: 'No refresh token provided',
       });
     }
 
-    const { accessToken, refreshToken } = await this.authService.refresh(oldToken);
+    const { accessToken, refreshToken } =
+      await this.authService.refresh(oldToken);
 
     this.setRefreshCookie(res, refreshToken);
     return { accessToken };
@@ -63,11 +66,9 @@ export class AuthController {
   /** Logout — revoke the refresh token. */
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
-    const token = (req as any).cookies?.refresh_token;
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const token = (req as unknown as { cookies?: { refresh_token?: string } })
+      .cookies?.refresh_token;
     if (token) {
       await this.authService.logout(token);
     }

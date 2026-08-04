@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma';
 
 /**
@@ -67,7 +67,14 @@ export class RetentionService {
   private async aggregateLastHour(): Promise<number> {
     const now = new Date();
     // Previous full hour: e.g., if now is 14:05, aggregate 13:00–13:59
-    const hourEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), 0, 0);
+    const hourEnd = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+      now.getHours(),
+      0,
+      0,
+    );
     const hourStart = new Date(hourEnd.getTime() - 60 * 60 * 1000);
 
     // Get all sensor IDs that have readings in the last hour
@@ -137,7 +144,9 @@ export class RetentionService {
    * Returns the number of deleted rows.
    */
   private async purgeOldReadings(): Promise<number> {
-    const cutoff = new Date(Date.now() - this.retentionDays * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(
+      Date.now() - this.retentionDays * 24 * 60 * 60 * 1000,
+    );
 
     const result = await this.prisma.reading.deleteMany({
       where: {

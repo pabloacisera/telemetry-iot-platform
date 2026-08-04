@@ -43,8 +43,11 @@ export class StatusTransitionService {
     );
 
     this.realtime.emitStatusChange(motorId, {
-      motorId, fromStatus, toStatus,
-      changedAt: now.toISOString(), changedBy,
+      motorId,
+      fromStatus,
+      toStatus,
+      changedAt: now.toISOString(),
+      changedBy,
     });
   }
 
@@ -62,7 +65,9 @@ export class StatusTransitionService {
     });
 
     this.realtime.emitStatusChange(motorId, {
-      motorSensorId, motorId, sensorStatus: toStatus,
+      motorSensorId,
+      motorId,
+      sensorStatus: toStatus,
       changedAt: now.toISOString(),
     });
   }
@@ -74,7 +79,9 @@ export class StatusTransitionService {
     });
 
     this.realtime.emitAlert(motorId, {
-      id: alert.id, motorId, type,
+      id: alert.id,
+      motorId,
+      type,
       triggeredAt: alert.triggeredAt.toISOString(),
     });
 
@@ -82,7 +89,10 @@ export class StatusTransitionService {
   }
 
   /** Create a sensor-level fault record. */
-  async createSensorFault(motorSensorId: number, faultType: string): Promise<void> {
+  async createSensorFault(
+    motorSensorId: number,
+    faultType: string,
+  ): Promise<void> {
     await this.prisma.sensorFault.create({
       data: { motorSensorId, faultType, detectedAt: new Date() },
     });

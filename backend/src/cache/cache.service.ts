@@ -48,7 +48,10 @@ export class CacheService implements OnModuleDestroy {
 
     // Push to ring buffer (last 5 readings for instant chart load)
     const historyKey = `motor_sensor:${motorSensorId}:recent`;
-    const entry = JSON.stringify({ value, timestamp: recordedAt.toISOString() });
+    const entry = JSON.stringify({
+      value,
+      timestamp: recordedAt.toISOString(),
+    });
     await this.redis.rpush(historyKey, entry);
     await this.redis.ltrim(historyKey, -5, -1); // keep only last 5
   }
@@ -91,7 +94,10 @@ export class CacheService implements OnModuleDestroy {
       const idMatch = keys[i].match(/motor_sensor:(\d+):last/);
       if (!idMatch) continue;
 
-      const [err, data] = responses[i] as [Error | null, Record<string, string>];
+      const [err, data] = responses[i] as [
+        Error | null,
+        Record<string, string>,
+      ];
       if (err || !data || !data.value) continue;
 
       result.set(parseInt(idMatch[1], 10), {
@@ -110,7 +116,9 @@ export class CacheService implements OnModuleDestroy {
   ): Promise<{ value: number; timestamp: string }[]> {
     const key = `motor_sensor:${motorSensorId}:recent`;
     const entries = await this.redis.lrange(key, 0, -1);
-    return entries.map((e) => JSON.parse(e));
+    return entries.map(
+      (e) => JSON.parse(e) as { value: number; timestamp: string },
+    );
   }
 
   // ===================================================================
@@ -138,13 +146,19 @@ export class CacheService implements OnModuleDestroy {
       if (!idMatch) continue;
       const [err, values] = responses[i] as [Error | null, string[] | null];
       if (err || !values) continue;
-      result.set(parseInt(idMatch[1], 10), values.map((v) => v === '1'));
+      result.set(
+        parseInt(idMatch[1], 10),
+        values.map((v) => v === '1'),
+      );
     }
     return result;
   }
 
   /** Persist escalation timer expiry timestamp for a motor. */
-  async persistEscalationTimer(motorId: number, expiresAt: number): Promise<void> {
+  async persistEscalationTimer(
+    motorId: number,
+    expiresAt: number,
+  ): Promise<void> {
     const key = `state:escalation:${motorId}`;
     await this.redis.set(key, expiresAt.toString(), 'EX', 180); // TTL 3 min
   }
@@ -203,7 +217,10 @@ export class CacheService implements OnModuleDestroy {
   }
 
   /** Persist sensor auto-restart-used flag. */
-  async persistSensorAutoRestartUsed(motorSensorId: number, used: boolean): Promise<void> {
+  async persistSensorAutoRestartUsed(
+    motorSensorId: number,
+    used: boolean,
+  ): Promise<void> {
     const key = `state:sensor_auto_restart:${motorSensorId}`;
     if (used) {
       await this.redis.set(key, '1', 'EX', 3600);
@@ -228,14 +245,23 @@ export class CacheService implements OnModuleDestroy {
   }
 
   /** Persist stuck tracker for a sensor. */
-  async persistStuckTracker(motorSensorId: number, value: number, count: number): Promise<void> {
+  async persistStuckTracker(
+    motorSensorId: number,
+    value: number,
+    count: number,
+  ): Promise<void> {
     const key = `state:stuck:${motorSensorId}`;
-    await this.redis.hset(key, { value: value.toString(), count: count.toString() });
+    await this.redis.hset(key, {
+      value: value.toString(),
+      count: count.toString(),
+    });
     await this.redis.expire(key, 600);
   }
 
   /** Restore all stuck trackers. */
-  async restoreStuckTrackers(): Promise<Map<number, { value: number; count: number }>> {
+  async restoreStuckTrackers(): Promise<
+    Map<number, { value: number; count: number }>
+  > {
     const keys = await this.redis.keys('state:stuck:*');
     const result = new Map<number, { value: number; count: number }>();
     if (keys.length === 0) return result;
@@ -250,7 +276,10 @@ export class CacheService implements OnModuleDestroy {
     for (let i = 0; i < keys.length; i++) {
       const idMatch = keys[i].match(/state:stuck:(\d+)/);
       if (!idMatch) continue;
-      const [err, data] = responses[i] as [Error | null, Record<string, string>];
+      const [err, data] = responses[i] as [
+        Error | null,
+        Record<string, string>,
+      ];
       if (err || !data || !data.value) continue;
       result.set(parseInt(idMatch[1], 10), {
         value: parseFloat(data.value),
@@ -285,7 +314,10 @@ export class CacheService implements OnModuleDestroy {
   // ===================================================================
 
   /** Push a reading to a sensor's sliding window (atomic, max 8 elements). */
-  async pushToWindow(motorSensorId: number, isAnomalous: boolean): Promise<boolean[]> {
+  async pushToWindow(
+    motorSensorId: number,
+    isAnomalous: boolean,
+  ): Promise<boolean[]> {
     const key = `state:window:${motorSensorId}`;
     // Guard: if key exists as wrong type (legacy string), delete it first
     const type = await this.redis.type(key);
@@ -324,7 +356,9 @@ export class CacheService implements OnModuleDestroy {
   }
 
   /** Get a single stuck tracker for a sensor. */
-  async getStuckTracker(motorSensorId: number): Promise<{ value: number; count: number }> {
+  async getStuckTracker(
+    motorSensorId: number,
+  ): Promise<{ value: number; count: number }> {
     const key = `state:stuck:${motorSensorId}`;
     const data = await this.redis.hgetall(key);
     if (!data || !data.value) return { value: NaN, count: 0 };
@@ -333,7 +367,9 @@ export class CacheService implements OnModuleDestroy {
 
   /** Get sensor auto-restart-used flag. */
   async getSensorAutoRestartUsed(motorSensorId: number): Promise<boolean> {
-    const val = await this.redis.get(`state:sensor_auto_restart:${motorSensorId}`);
+    const val = await this.redis.get(
+      `state:sensor_auto_restart:${motorSensorId}`,
+    );
     return val === '1';
   }
 }

@@ -26,7 +26,10 @@ export class AuthService {
   ) {}
 
   /** Validate credentials and issue tokens. */
-  async login(email: string, password: string): Promise<{ accessToken: string; refreshToken: string }> {
+  async login(
+    email: string,
+    password: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -37,7 +40,11 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const accessToken = this.generateAccessToken(user.id, user.email, user.role);
+    const accessToken = this.generateAccessToken(
+      user.id,
+      user.email,
+      user.role,
+    );
     const refreshToken = await this.createRefreshToken(user.id);
 
     this.logger.log(`User ${user.email} logged in`);
@@ -48,7 +55,9 @@ export class AuthService {
    * Rotate refresh token: validate old, revoke it, issue new.
    * Implements reuse detection with cascade revocation.
    */
-  async refresh(oldToken: string): Promise<{ accessToken: string; refreshToken: string }> {
+  async refresh(
+    oldToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string }> {
     const { jti, secret } = this.parseToken(oldToken);
 
     // Fast O(1) lookup by jti if available
@@ -84,7 +93,9 @@ export class AuthService {
       this.logger.warn(
         `Refresh token reuse detected for user ${record.user.email} — all tokens revoked`,
       );
-      throw new UnauthorizedException('Token reuse detected. All sessions revoked.');
+      throw new UnauthorizedException(
+        'Token reuse detected. All sessions revoked.',
+      );
     }
 
     // Validate secret
@@ -119,7 +130,7 @@ export class AuthService {
       include: { user: true },
     });
 
-    let matchedRecord: typeof candidates[number] | null = null;
+    let matchedRecord: (typeof candidates)[number] | null = null;
     for (const record of candidates) {
       const matches = await bcrypt.compare(oldToken, record.tokenHash);
       if (matches) {
@@ -179,7 +190,11 @@ export class AuthService {
   }
 
   /** Generate a short-lived JWT access token. */
-  private generateAccessToken(userId: number, email: string, role: string): string {
+  private generateAccessToken(
+    userId: number,
+    email: string,
+    role: string,
+  ): string {
     return this.jwtService.sign({
       sub: userId,
       email,
@@ -205,7 +220,10 @@ export class AuthService {
   private parseToken(token: string): { jti: string | null; secret: string } {
     const colonIndex = token.indexOf(':');
     if (colonIndex > 0 && colonIndex < token.length - 1) {
-      return { jti: token.slice(0, colonIndex), secret: token.slice(colonIndex + 1) };
+      return {
+        jti: token.slice(0, colonIndex),
+        secret: token.slice(colonIndex + 1),
+      };
     }
     // Legacy token (plain UUID without jti prefix)
     return { jti: null, secret: token };

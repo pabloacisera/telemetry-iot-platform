@@ -29,14 +29,14 @@ export class RealtimeGateway
   /** On connect: join client to 'dashboard' room + listen for room commands. */
   handleConnection(client: Socket): void {
     this.logger.debug(`Client connected: ${client.id}`);
-    client.join('dashboard');
+    void client.join('dashboard');
 
     client.on('join-motor', (motorId: number) => {
-      client.join(`motor:${motorId}`);
+      void client.join(`motor:${motorId}`);
     });
 
     client.on('leave-motor', (motorId: number) => {
-      client.leave(`motor:${motorId}`);
+      void client.leave(`motor:${motorId}`);
     });
   }
 
