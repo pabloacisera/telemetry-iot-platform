@@ -121,20 +121,28 @@ export class MotorEvaluationService {
           await this.triggerUnderReview(motorId);
         }
       }
+
+      // Auto-recovery: if under_review and ALL sensor windows are now below threshold → healthy
+      if (motorStatus === 'under_review') {
+        const recovered = await this.checkAllWindowsNormalized(motorId);
+        if (recovered) {
+          await this.recoverToHealthy(motorId);
+        }
+      }
     } finally {
       await this.cache.releaseMotorLock(motorId);
     }
   }
 
-  /** Transition motor to under_review and start escalation timer. */
+  /** Transition motor to under_review (internal observation, no alert yet). */
   private async triggerUnderReview(motorId: number): Promise<void> {
     const current = this.motorStatuses.get(motorId);
     if (current !== 'healthy') return;
 
     await this.statusTransition.transitionMotor(motorId, current, 'under_review');
-    await this.statusTransition.createAlert(motorId, 'warning');
     this.motorStatuses.set(motorId, 'under_review');
 
+    // Start escalation timer — if still anomalous after 2 min, THEN alert + action
     this.startEscalationTimer(motorId);
   }
 
@@ -172,22 +180,24 @@ export class MotorEvaluationService {
     this.cache.clearEscalationTimer(motorId).catch(() => {});
   }
 
-  /** Check if motor should be force-restarted or disabled. */
+  /**
+   * Check if motor should be alerted, force-restarted, or disabled.
+   * This runs after 2 minutes — if still anomalous, escalate with visible alert.
+   */
   private async checkEscalation(motorId: number): Promise<void> {
     if (this.motorStatuses.get(motorId) !== 'under_review') return;
 
     // Check all sensor windows directly from Redis
-    const sensorIds = this.motorSensorIds.get(motorId) || [];
-    let stillAnomalous = false;
-    for (const id of sensorIds) {
-      const window = await this.cache.getWindow(id);
-      if (window.filter(Boolean).length >= 5) {
-        stillAnomalous = true;
-        break;
-      }
+    const stillAnomalous = await this.isStillAnomalous(motorId);
+
+    // If normalized during the 2 min wait — recover silently
+    if (!stillAnomalous) {
+      await this.recoverToHealthy(motorId);
+      return;
     }
 
-    if (!stillAnomalous) return;
+    // Still anomalous after 2 min → CREATE ALERT (now visible to operator)
+    await this.statusTransition.createAlert(motorId, 'warning');
 
     const alreadyRestarted = await this.cache.getAutoRestartUsed(motorId);
 
@@ -203,6 +213,38 @@ export class MotorEvaluationService {
     this.motorStatuses.set(motorId, 'shutting_down');
     await this.commandService.publishRestart(motorId, 'system');
     await this.cache.persistAutoRestartUsed(motorId, true);
+  }
+
+  /** Check if any sensor window for this motor still has >=5/8 anomalous. */
+  private async isStillAnomalous(motorId: number): Promise<boolean> {
+    const sensorIds = this.motorSensorIds.get(motorId) || [];
+    for (const id of sensorIds) {
+      const window = await this.cache.getWindow(id);
+      if (window.filter(Boolean).length >= 5) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Check if ALL sensor windows are below threshold (< 5/8). */
+  private async checkAllWindowsNormalized(motorId: number): Promise<boolean> {
+    const sensorIds = this.motorSensorIds.get(motorId) || [];
+    for (const id of sensorIds) {
+      const window = await this.cache.getWindow(id);
+      if (window.filter(Boolean).length >= 5) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /** Recover motor from under_review to healthy (auto-recovery). */
+  private async recoverToHealthy(motorId: number): Promise<void> {
+    await this.statusTransition.transitionMotor(motorId, 'under_review', 'healthy');
+    this.motorStatuses.set(motorId, 'healthy');
+    this.clearEscalationTimer(motorId);
+    this.logger.log(`Motor ${motorId}: auto-recovered to healthy (readings normalized)`);
   }
 
   /** Called when motor enters restarting — clears windows in Redis. */
