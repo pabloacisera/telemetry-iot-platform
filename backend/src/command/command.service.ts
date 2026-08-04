@@ -22,10 +22,19 @@ export class CommandService implements OnModuleInit {
 
   /** Connect to the MQTT broker on module initialization. */
   onModuleInit(): void {
-    const host = this.configService.get<string>('MQTT_BROKER_HOST', 'localhost');
+    const host = this.configService.get<string>(
+      'MQTT_BROKER_HOST',
+      'localhost',
+    );
     const port = this.configService.get<number>('MQTT_BROKER_PORT', 1883);
-    const user = this.configService.get<string>('MQTT_BACKEND_USER', 'backend_service');
-    const pass = this.configService.get<string>('MQTT_BACKEND_PASS', 'backend_dev_pass');
+    const user = this.configService.get<string>(
+      'MQTT_BACKEND_USER',
+      'backend_service',
+    );
+    const pass = this.configService.get<string>(
+      'MQTT_BACKEND_PASS',
+      'backend_dev_pass',
+    );
 
     this.client = mqtt.connect(`mqtt://${host}:${port}`, {
       clientId: 'backend_command_publisher',
@@ -77,7 +86,10 @@ export class CommandService implements OnModuleInit {
   }
 
   /** Publish a sensor restart command. Returns the request_id. */
-  async publishSensorRestart(motorId: number, sensorType: string): Promise<string> {
+  async publishSensorRestart(
+    motorId: number,
+    sensorType: string,
+  ): Promise<string> {
     const requestId = randomUUID();
     const topic = `plant/motor/${motorId}/sensor/${sensorType}/cmd`;
     const payload = JSON.stringify({
@@ -86,7 +98,9 @@ export class CommandService implements OnModuleInit {
     });
 
     await this.publish(topic, payload);
-    this.logger.log(`Sensor restart → motor ${motorId}/${sensorType} (${requestId})`);
+    this.logger.log(
+      `Sensor restart → motor ${motorId}/${sensorType} (${requestId})`,
+    );
     return requestId;
   }
 
@@ -98,5 +112,33 @@ export class CommandService implements OnModuleInit {
         else resolve();
       });
     });
+  }
+
+  /**
+   * Notify the simulator that a new motor was added (hot-reload).
+   * The simulator listens on system/simulator/motor-added and starts
+   * a new MotorSimulator instance at runtime.
+   */
+  async notifySimulatorMotorAdded(data: {
+    motorId: number;
+    ratedCurrentA: number;
+    connectionType: string;
+    mqttUser: string;
+    mqttPass: string;
+  }): Promise<void> {
+    const payload = JSON.stringify(data);
+    await this.publish('system/simulator/motor-added', payload);
+    this.logger.log(`Simulator notified: motor-added (motor ${data.motorId})`);
+  }
+
+  /**
+   * Notify the simulator that a motor was removed (hot-reload).
+   * The simulator listens on system/simulator/motor-removed and stops
+   * the corresponding MotorSimulator instance at runtime.
+   */
+  async notifySimulatorMotorRemoved(motorId: number): Promise<void> {
+    const payload = JSON.stringify({ motorId });
+    await this.publish('system/simulator/motor-removed', payload);
+    this.logger.log(`Simulator notified: motor-removed (motor ${motorId})`);
   }
 }

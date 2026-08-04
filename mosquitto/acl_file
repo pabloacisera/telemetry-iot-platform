@@ -166,8 +166,21 @@ topic write plant/motor/+/cmd
 topic write plant/motor/+/sensor/+/cmd
 topic read plant/motor/+/cmd/ack
 topic read plant/motor/+/sensor/+/cmd/ack
+topic write system/simulator/motor-added
+topic write system/simulator/motor-removed
+topic read system/simulator/#
 
 # --- QA fault injector ---
 
 user qa_fault_injector
 topic write qa/motor/+/inject-fault
+
+user esp32_motor17
+topic write plant/motor/17/telemetry
+topic write plant/motor/17/status
+topic write plant/motor/17/restart-progress
+topic read plant/motor/17/cmd
+topic read plant/motor/17/sensor/+/cmd
+topic write plant/motor/17/cmd/ack
+topic write plant/motor/17/sensor/+/cmd/ack
+topic read qa/motor/17/inject-fault

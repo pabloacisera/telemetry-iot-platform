@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
@@ -56,19 +61,70 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     });
 
     for (const sensor of sensors) {
-      this.sensorLookup.set(`${sensor.motorId}:${sensor.sensorType}`, sensor.id);
+      this.sensorLookup.set(
+        `${sensor.motorId}:${sensor.sensorType}`,
+        sensor.id,
+      );
       this.connectionTypes.set(sensor.motorId, sensor.motor.connectionType);
     }
 
     this.logger.log(`Lookups built: ${this.sensorLookup.size} sensors`);
   }
 
+  /**
+   * Register a newly created motor into the lookup maps (hot-reload).
+   * Called by MotorConfigService after creating a motor, so we can
+   * process its telemetry without restarting the backend.
+   */
+  async registerMotor(motorId: number): Promise<void> {
+    const sensors = await this.prisma.motorSensor.findMany({
+      where: { motorId },
+      include: { motor: true },
+    });
+
+    for (const sensor of sensors) {
+      this.sensorLookup.set(
+        `${sensor.motorId}:${sensor.sensorType}`,
+        sensor.id,
+      );
+      this.connectionTypes.set(sensor.motorId, sensor.motor.connectionType);
+    }
+
+    // Also register in the evaluation service
+    await this.evaluationService.registerMotor(motorId);
+
+    this.logger.log(
+      `Hot-registered motor ${motorId}: ${sensors.length} sensors added to lookups`,
+    );
+  }
+
+  /**
+   * Unregister a motor from lookups (hot-reload on delete).
+   */
+  unregisterMotor(motorId: number): void {
+    for (const sensorType of ['temperature', 'vibration', 'current']) {
+      this.sensorLookup.delete(`${motorId}:${sensorType}`);
+    }
+    this.connectionTypes.delete(motorId);
+    this.evaluationService.unregisterMotor(motorId);
+    this.logger.log(`Hot-unregistered motor ${motorId} from lookups`);
+  }
+
   /** Connect to MQTT broker with persistent session. */
   private connectToBroker(): void {
-    const host = this.configService.get<string>('MQTT_BROKER_HOST', 'localhost');
+    const host = this.configService.get<string>(
+      'MQTT_BROKER_HOST',
+      'localhost',
+    );
     const port = this.configService.get<number>('MQTT_BROKER_PORT', 1883);
-    const user = this.configService.get<string>('MQTT_BACKEND_USER', 'backend_service');
-    const pass = this.configService.get<string>('MQTT_BACKEND_PASS', 'backend_dev_pass');
+    const user = this.configService.get<string>(
+      'MQTT_BACKEND_USER',
+      'backend_service',
+    );
+    const pass = this.configService.get<string>(
+      'MQTT_BACKEND_PASS',
+      'backend_dev_pass',
+    );
 
     this.client = mqtt.connect(`mqtt://${host}:${port}`, {
       clientId: 'backend_service',
@@ -89,8 +145,10 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     });
 
     this.client.on('message', (topic: string, payload: Buffer) => {
-      this.handleMessage(topic, payload).catch((err) => {
-        this.logger.error(`Message handling error on ${topic}: ${err.message}`);
+      this.handleMessage(topic, payload).catch((err: unknown) => {
+        this.logger.error(
+          `Message handling error on ${topic}: ${(err as Error).message}`,
+        );
       });
     });
   }
@@ -107,7 +165,7 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
   private async handleMessage(topic: string, payload: Buffer): Promise<void> {
     let data: Record<string, unknown>;
     try {
-      data = JSON.parse(payload.toString());
+      data = JSON.parse(payload.toString()) as Record<string, unknown>;
     } catch {
       return;
     }
@@ -134,15 +192,30 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
 
     if (dto.temperature_c !== undefined) {
       const id = this.sensorLookup.get(`${motorId}:temperature`);
-      if (id) await this.evaluationService.evaluateReading(id, dto.temperature_c, recordedAt);
+      if (id)
+        await this.evaluationService.evaluateReading(
+          id,
+          dto.temperature_c,
+          recordedAt,
+        );
     }
     if (dto.vibration_mm_s !== undefined) {
       const id = this.sensorLookup.get(`${motorId}:vibration`);
-      if (id) await this.evaluationService.evaluateReading(id, dto.vibration_mm_s, recordedAt);
+      if (id)
+        await this.evaluationService.evaluateReading(
+          id,
+          dto.vibration_mm_s,
+          recordedAt,
+        );
     }
     if (dto.current_a !== undefined) {
       const id = this.sensorLookup.get(`${motorId}:current`);
-      if (id) await this.evaluationService.evaluateReading(id, dto.current_a, recordedAt);
+      if (id)
+        await this.evaluationService.evaluateReading(
+          id,
+          dto.current_a,
+          recordedAt,
+        );
     }
   }
 
@@ -155,7 +228,9 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
 
     if (state === 'offline') {
       // Get current motor status from DB for proper transition
-      const motor = await this.prisma.motor.findUnique({ where: { id: motorId } });
+      const motor = await this.prisma.motor.findUnique({
+        where: { id: motorId },
+      });
       if (motor && motor.status !== 'manual_shutdown') {
         await this.statusTransition.transitionMotor(
           motorId,
@@ -168,8 +243,13 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     } else if (state === 'online') {
       this.clearDisconnectionTimer(motorId);
       // Only transition to healthy if motor was manually stopped or restarting
-      const motor = await this.prisma.motor.findUnique({ where: { id: motorId } });
-      if (motor && (motor.status === 'manual_shutdown' || motor.status === 'restarting')) {
+      const motor = await this.prisma.motor.findUnique({
+        where: { id: motorId },
+      });
+      if (
+        motor &&
+        (motor.status === 'manual_shutdown' || motor.status === 'restarting')
+      ) {
         await this.statusTransition.transitionMotor(
           motorId,
           motor.status,
@@ -183,7 +263,9 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Forward restart-progress to WebSocket clients and update motor status. */
-  private async handleRestartProgress(data: Record<string, unknown>): Promise<void> {
+  private async handleRestartProgress(
+    data: Record<string, unknown>,
+  ): Promise<void> {
     const motorId = data.motor_id as number;
     const secondsRemaining = data.seconds_remaining as number;
 
@@ -191,7 +273,9 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
 
     // On first progress event, transition to 'restarting' in DB
     if (secondsRemaining >= 99) {
-      const motor = await this.prisma.motor.findUnique({ where: { id: motorId } });
+      const motor = await this.prisma.motor.findUnique({
+        where: { id: motorId },
+      });
       if (motor && motor.status !== 'restarting') {
         await this.statusTransition.transitionMotor(
           motorId,
@@ -214,12 +298,14 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     const connType = this.connectionTypes.get(motorId) || 'wifi';
     const graceMs = connType === 'lan' ? 5000 : 20000;
 
-    const timer = setTimeout(async () => {
-      for (const [key, sensorId] of this.sensorLookup.entries()) {
-        if (key.startsWith(`${motorId}:`)) {
-          await this.evaluationService.onSensorDisconnected(sensorId);
+    const timer = setTimeout(() => {
+      void (async () => {
+        for (const [key, sensorId] of this.sensorLookup.entries()) {
+          if (key.startsWith(`${motorId}:`)) {
+            await this.evaluationService.onSensorDisconnected(sensorId);
+          }
         }
-      }
+      })();
     }, graceMs);
 
     this.disconnectionTimers.set(motorId, timer);

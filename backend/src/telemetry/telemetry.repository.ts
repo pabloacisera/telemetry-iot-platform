@@ -34,13 +34,16 @@ export class TelemetryRepository implements OnModuleDestroy {
   private flushing = false;
 
   constructor(private readonly prisma: PrismaService) {
-    this.flushTimer = setInterval(() => this.flush(), this.FLUSH_INTERVAL_MS);
+    this.flushTimer = setInterval(
+      () => void this.flush(),
+      this.FLUSH_INTERVAL_MS,
+    );
   }
 
   onModuleDestroy(): void {
     clearInterval(this.flushTimer);
     // Final flush on shutdown (best-effort, sync not awaited by Nest)
-    this.flush();
+    void this.flush();
   }
 
   /** Enqueue a reading for batched persistence. */
@@ -92,6 +95,14 @@ export class TelemetryRepository implements OnModuleDestroy {
   /** Get all motor_sensors with their motor info (for boot initialization). */
   async getAllMotorSensors() {
     return this.prisma.motorSensor.findMany({
+      include: { motor: true },
+    });
+  }
+
+  /** Get motor_sensors for a specific motor (for hot-reload registration). */
+  async getMotorSensors(motorId: number) {
+    return this.prisma.motorSensor.findMany({
+      where: { motorId },
       include: { motor: true },
     });
   }

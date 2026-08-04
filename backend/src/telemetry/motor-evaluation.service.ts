@@ -58,13 +58,17 @@ export class MotorEvaluationService {
           this.scheduleEscalation(motorId, remaining);
         } else {
           // Expired while down — execute now
-          this.checkEscalation(motorId).catch((err) => {
-            this.logger.error(`Restored escalation failed motor ${motorId}: ${err.message}`);
+          this.checkEscalation(motorId).catch((err: unknown) => {
+            this.logger.error(
+              `Restored escalation failed motor ${motorId}: ${(err as Error).message}`,
+            );
           });
         }
       }
       if (savedTimers.size > 0) {
-        this.logger.log(`Restored ${savedTimers.size} escalation timers from Redis`);
+        this.logger.log(
+          `Restored ${savedTimers.size} escalation timers from Redis`,
+        );
       }
     } catch (err) {
       this.logger.warn(`Failed to restore timers: ${(err as Error).message}`);
@@ -139,7 +143,11 @@ export class MotorEvaluationService {
     const current = this.motorStatuses.get(motorId);
     if (current !== 'healthy') return;
 
-    await this.statusTransition.transitionMotor(motorId, current, 'under_review');
+    await this.statusTransition.transitionMotor(
+      motorId,
+      current,
+      'under_review',
+    );
     this.motorStatuses.set(motorId, 'under_review');
 
     // Start escalation timer — if still anomalous after 2 min, THEN alert + action
@@ -162,8 +170,10 @@ export class MotorEvaluationService {
     const timer = setTimeout(() => {
       this.escalationTimers.delete(motorId);
       this.cache.clearEscalationTimer(motorId).catch(() => {});
-      this.checkEscalation(motorId).catch((err) => {
-        this.logger.error(`Escalation check failed motor ${motorId}: ${err.message}`);
+      this.checkEscalation(motorId).catch((err: unknown) => {
+        this.logger.error(
+          `Escalation check failed motor ${motorId}: ${(err as Error).message}`,
+        );
       });
     }, delayMs);
 
@@ -202,13 +212,21 @@ export class MotorEvaluationService {
     const alreadyRestarted = await this.cache.getAutoRestartUsed(motorId);
 
     if (alreadyRestarted) {
-      await this.statusTransition.transitionMotor(motorId, 'under_review', 'disabled');
+      await this.statusTransition.transitionMotor(
+        motorId,
+        'under_review',
+        'disabled',
+      );
       await this.statusTransition.createAlert(motorId, 'disabled');
       this.motorStatuses.set(motorId, 'disabled');
       return;
     }
 
-    await this.statusTransition.transitionMotor(motorId, 'under_review', 'shutting_down');
+    await this.statusTransition.transitionMotor(
+      motorId,
+      'under_review',
+      'shutting_down',
+    );
     await this.statusTransition.createAlert(motorId, 'forced_restart');
     this.motorStatuses.set(motorId, 'shutting_down');
     await this.commandService.publishRestart(motorId, 'system');
@@ -241,10 +259,16 @@ export class MotorEvaluationService {
 
   /** Recover motor from under_review to healthy (auto-recovery). */
   private async recoverToHealthy(motorId: number): Promise<void> {
-    await this.statusTransition.transitionMotor(motorId, 'under_review', 'healthy');
+    await this.statusTransition.transitionMotor(
+      motorId,
+      'under_review',
+      'healthy',
+    );
     this.motorStatuses.set(motorId, 'healthy');
     this.clearEscalationTimer(motorId);
-    this.logger.log(`Motor ${motorId}: auto-recovered to healthy (readings normalized)`);
+    this.logger.log(
+      `Motor ${motorId}: auto-recovered to healthy (readings normalized)`,
+    );
   }
 
   /** Called when motor enters restarting — clears windows in Redis. */
@@ -270,5 +294,18 @@ export class MotorEvaluationService {
     for (const id of sensorIds) {
       await this.cache.clearWindow(id);
     }
+  }
+
+  /** Register a new motor in evaluation maps (hot-reload). */
+  registerMotor(motorId: number, sensorIds: number[]): void {
+    this.motorStatuses.set(motorId, 'healthy');
+    this.motorSensorIds.set(motorId, sensorIds);
+  }
+
+  /** Unregister a motor from evaluation maps (hot-reload on delete). */
+  unregisterMotor(motorId: number): void {
+    this.motorStatuses.delete(motorId);
+    this.motorSensorIds.delete(motorId);
+    this.clearEscalationTimer(motorId);
   }
 }

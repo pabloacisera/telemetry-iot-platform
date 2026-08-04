@@ -33,7 +33,10 @@ export class TelemetryEvaluationService implements OnModuleInit {
   private sensorMeta: Map<number, SensorMeta> = new Map();
 
   /** Plausible ranges by sensor type. */
-  private readonly plausibleRanges: Record<string, { min: number; max: number }> = {
+  private readonly plausibleRanges: Record<
+    string,
+    { min: number; max: number }
+  > = {
     temperature: { min: 10, max: 150 },
     vibration: { min: 0, max: 20 },
     current: { min: 0, max: 100 },
@@ -56,7 +59,10 @@ export class TelemetryEvaluationService implements OnModuleInit {
     const motorSensorIds = new Map<number, number[]>();
 
     for (const sensor of sensors) {
-      const range = this.plausibleRanges[sensor.sensorType] || { min: 0, max: 100 };
+      const range = this.plausibleRanges[sensor.sensorType] || {
+        min: 0,
+        max: 100,
+      };
 
       this.sensorMeta.set(sensor.id, {
         motorId: sensor.motorId,
@@ -81,11 +87,17 @@ export class TelemetryEvaluationService implements OnModuleInit {
     await this.motorEval.init(motorStatuses, motorSensorIds);
 
     // Build simplified sensor meta for SensorEvaluationService
-    const sensorMetaSimple = new Map<number, { motorId: number; sensorType: string }>();
+    const sensorMetaSimple = new Map<
+      number,
+      { motorId: number; sensorType: string }
+    >();
     for (const sensor of sensors) {
-      sensorMetaSimple.set(sensor.id, { motorId: sensor.motorId, sensorType: sensor.sensorType });
+      sensorMetaSimple.set(sensor.id, {
+        motorId: sensor.motorId,
+        sensorType: sensor.sensorType,
+      });
     }
-    await this.sensorEval.init(sensorStatuses, motorSensorIds, sensorMetaSimple);
+    this.sensorEval.init(sensorStatuses, motorSensorIds, sensorMetaSimple);
 
     this.logger.log(
       `Initialized: ${this.sensorMeta.size} sensors, ${motorStatuses.size} motors`,
@@ -109,33 +121,44 @@ export class TelemetryEvaluationService implements OnModuleInit {
     // Sensor fault evaluation (paused during motor restart)
     if (motorStatus !== 'shutting_down' && motorStatus !== 'restarting') {
       await this.sensorEval.evaluateReading(
-        motorSensorId, meta.motorId, value, meta.plausibleMin, meta.plausibleMax,
+        motorSensorId,
+        meta.motorId,
+        value,
+        meta.plausibleMin,
+        meta.plausibleMax,
       );
     }
 
     // Classify the reading
-    const isImplausible = value < meta.plausibleMin || value > meta.plausibleMax;
+    const isImplausible =
+      value < meta.plausibleMin || value > meta.plausibleMax;
     const isCritical = !isImplausible && value > meta.criticalMax;
-    const isAnomalous = !isImplausible && !isCritical && value > meta.warningMax;
+    const isAnomalous =
+      !isImplausible && !isCritical && value > meta.warningMax;
 
     // Persist
     await this.repository.persistReading({
-      motorSensorId, value,
+      motorSensorId,
+      value,
       isAnomalous: isAnomalous || isCritical,
-      isImplausible, recordedAt,
+      isImplausible,
+      recordedAt,
     });
 
     // Redis write-through
     await this.cache.updateSnapshot(
-      motorSensorId, value,
+      motorSensorId,
+      value,
       this.sensorEval.getSensorStatus(motorSensorId),
       recordedAt,
     );
 
     // WebSocket emission
     this.realtime.emitTelemetry(meta.motorId, {
-      motorSensorId, motorId: meta.motorId,
-      sensorType: meta.sensorType, value,
+      motorSensorId,
+      motorId: meta.motorId,
+      sensorType: meta.sensorType,
+      value,
       isAnomalous: isAnomalous || isCritical,
       recordedAt: recordedAt.toISOString(),
     });
@@ -146,7 +169,10 @@ export class TelemetryEvaluationService implements OnModuleInit {
     if (isImplausible) return;
 
     await this.motorEval.pushReading(
-      motorSensorId, meta.motorId, isAnomalous || isCritical, isCritical,
+      motorSensorId,
+      meta.motorId,
+      isAnomalous || isCritical,
+      isCritical,
     );
   }
 
@@ -164,6 +190,63 @@ export class TelemetryEvaluationService implements OnModuleInit {
 
   /** Reset evaluation window for a motor (called after restart completes). */
   resetWindow(motorId: number): void {
-    this.motorEval.resetWindow(motorId);
+    void this.motorEval.resetWindow(motorId);
+  }
+
+  /**
+   * Register a newly created motor into evaluation maps (hot-reload).
+   * Loads sensor metadata from DB and registers in sub-services.
+   */
+  async registerMotor(motorId: number): Promise<void> {
+    const sensors = await this.repository.getMotorSensors(motorId);
+
+    const sensorIds: number[] = [];
+
+    for (const sensor of sensors) {
+      const range = this.plausibleRanges[sensor.sensorType] || {
+        min: 0,
+        max: 100,
+      };
+
+      this.sensorMeta.set(sensor.id, {
+        motorId: sensor.motorId,
+        sensorType: sensor.sensorType,
+        healthyMax: sensor.healthyMax,
+        warningMax: sensor.warningMax,
+        criticalMax: sensor.criticalMax,
+        plausibleMin: range.min,
+        plausibleMax: range.max,
+        connectionType: sensor.motor.connectionType,
+      });
+
+      sensorIds.push(sensor.id);
+    }
+
+    // Register in motor evaluation
+    this.motorEval.registerMotor(motorId, sensorIds);
+
+    // Register in sensor evaluation
+    for (const sensor of sensors) {
+      this.sensorEval.registerSensor(sensor.id, motorId, sensor.sensorType);
+    }
+
+    this.logger.log(
+      `Hot-registered motor ${motorId}: ${sensors.length} sensors in evaluation`,
+    );
+  }
+
+  /**
+   * Unregister a motor from evaluation maps (hot-reload on delete).
+   */
+  unregisterMotor(motorId: number): void {
+    // Remove all sensor metadata for this motor
+    for (const [sensorId, meta] of this.sensorMeta.entries()) {
+      if (meta.motorId === motorId) {
+        this.sensorMeta.delete(sensorId);
+        this.sensorEval.unregisterSensor(sensorId);
+      }
+    }
+    this.motorEval.unregisterMotor(motorId);
+    this.logger.log(`Hot-unregistered motor ${motorId} from evaluation`);
   }
 }

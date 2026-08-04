@@ -10,6 +10,7 @@ import { MotorsModule } from './motors';
 import { AlertsModule } from './alerts';
 import { AuthModule } from './auth';
 import { RagModule } from './rag';
+import { MotorConfigModule } from './config-module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { RagModule } from './rag';
     AlertsModule,
     AuthModule,
     RagModule,
+    MotorConfigModule,
   ],
 })
 export class AppModule {}

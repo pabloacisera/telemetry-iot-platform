@@ -31,7 +31,8 @@ export class SensorEvaluationService {
   private motorSensorIds: Map<number, number[]> = new Map();
 
   /** Sensor metadata: motor_sensor_id → { motorId, sensorType }. */
-  private sensorMeta: Map<number, { motorId: number; sensorType: string }> = new Map();
+  private sensorMeta: Map<number, { motorId: number; sensorType: string }> =
+    new Map();
 
   /** Active restart timers (local — restored from Redis on boot). */
   private restartTimers: Map<number, NodeJS.Timeout> = new Map();
@@ -44,11 +45,11 @@ export class SensorEvaluationService {
   ) {}
 
   /** Initialize from DB metadata. */
-  async init(
+  init(
     sensorStatuses: Map<number, string>,
     motorSensorIds: Map<number, number[]>,
     sensorMeta?: Map<number, { motorId: number; sensorType: string }>,
-  ): Promise<void> {
+  ): void {
     this.sensorStatuses = sensorStatuses;
     this.motorSensorIds = motorSensorIds;
     if (sensorMeta) {
@@ -101,11 +102,18 @@ export class SensorEvaluationService {
       tracker.count = 1;
     }
 
-    await this.cache.persistStuckTracker(motorSensorId, tracker.value, tracker.count);
+    await this.cache.persistStuckTracker(
+      motorSensorId,
+      tracker.value,
+      tracker.count,
+    );
   }
 
   /** Handle sensor disconnection (called when grace window expires). */
-  async onSensorDisconnected(motorSensorId: number, motorId: number): Promise<void> {
+  async onSensorDisconnected(
+    motorSensorId: number,
+    motorId: number,
+  ): Promise<void> {
     const motorStatus = this.motorEvaluation.getMotorStatus(motorId);
     if (motorStatus === 'shutting_down' || motorStatus === 'restarting') return;
 
@@ -135,13 +143,21 @@ export class SensorEvaluationService {
     faultType: string,
   ): Promise<void> {
     // Check auto-restart flag from Redis (source of truth)
-    const alreadyRestarted = await this.cache.getSensorAutoRestartUsed(motorSensorId);
+    const alreadyRestarted =
+      await this.cache.getSensorAutoRestartUsed(motorSensorId);
 
     if (alreadyRestarted) {
       // Recurrence after auto-restart → fault_persistent
-      await this.statusTransition.transitionSensor(motorSensorId, motorId, 'fault_persistent');
+      await this.statusTransition.transitionSensor(
+        motorSensorId,
+        motorId,
+        'fault_persistent',
+      );
       await this.statusTransition.createSensorFault(motorSensorId, faultType);
-      await this.statusTransition.createAlert(motorId, 'sensor_fault_persistent');
+      await this.statusTransition.createAlert(
+        motorId,
+        'sensor_fault_persistent',
+      );
       this.sensorStatuses.set(motorSensorId, 'fault_persistent');
 
       this.logger.warn(
@@ -151,7 +167,11 @@ export class SensorEvaluationService {
     }
 
     // First fault: mark, alert, schedule auto-restart
-    await this.statusTransition.transitionSensor(motorSensorId, motorId, 'fault');
+    await this.statusTransition.transitionSensor(
+      motorSensorId,
+      motorId,
+      'fault',
+    );
     await this.statusTransition.createSensorFault(motorSensorId, faultType);
     await this.statusTransition.createAlert(motorId, 'sensor_fault');
     this.sensorStatuses.set(motorSensorId, 'fault');
@@ -172,15 +192,19 @@ export class SensorEvaluationService {
     const meta = this.sensorMeta.get(motorSensorId);
     const sensorType = meta?.sensorType || 'unknown';
 
-    const timer = setTimeout(async () => {
+    const timer = setTimeout(() => {
       this.restartTimers.delete(motorSensorId);
 
       if (this.sensorStatuses.get(motorSensorId) !== 'fault') return;
 
-      await this.cache.persistSensorAutoRestartUsed(motorSensorId, true);
-      await this.restoreSensor(motorSensorId, motorId, sensorType);
+      void (async () => {
+        await this.cache.persistSensorAutoRestartUsed(motorSensorId, true);
+        await this.restoreSensor(motorSensorId, motorId, sensorType);
 
-      this.logger.log(`Sensor ${motorSensorId} (motor ${motorId}): auto-restarted`);
+        this.logger.log(
+          `Sensor ${motorSensorId} (motor ${motorId}): auto-restarted`,
+        );
+      })();
     }, 5_000);
 
     this.restartTimers.set(motorSensorId, timer);
@@ -211,8 +235,43 @@ export class SensorEvaluationService {
     const motorStatus = this.motorEvaluation.getMotorStatus(motorId);
     if (motorStatus !== 'healthy') return;
 
-    await this.statusTransition.transitionMotor(motorId, motorStatus, 'under_review');
-    await this.statusTransition.createAlert(motorId, 'sensor_failure_widespread');
+    await this.statusTransition.transitionMotor(
+      motorId,
+      motorStatus,
+      'under_review',
+    );
+    await this.statusTransition.createAlert(
+      motorId,
+      'sensor_failure_widespread',
+    );
     this.logger.warn(`Motor ${motorId}: all 3 sensors in fault → under_review`);
+  }
+
+  /** Register a new sensor in evaluation maps (hot-reload). */
+  registerSensor(sensorId: number, motorId: number, sensorType: string): void {
+    this.sensorStatuses.set(sensorId, 'ok');
+    this.sensorMeta.set(sensorId, { motorId, sensorType });
+
+    const existing = this.motorSensorIds.get(motorId) || [];
+    if (!existing.includes(sensorId)) {
+      existing.push(sensorId);
+      this.motorSensorIds.set(motorId, existing);
+    }
+  }
+
+  /** Unregister a sensor from evaluation maps (hot-reload on delete). */
+  unregisterSensor(sensorId: number): void {
+    this.sensorStatuses.delete(sensorId);
+    this.sensorMeta.delete(sensorId);
+
+    // Clean up from motorSensorIds
+    for (const [motorId, ids] of this.motorSensorIds.entries()) {
+      const idx = ids.indexOf(sensorId);
+      if (idx !== -1) {
+        ids.splice(idx, 1);
+        if (ids.length === 0) this.motorSensorIds.delete(motorId);
+        break;
+      }
+    }
   }
 }
