@@ -5,10 +5,12 @@ import type { AppDispatch, RootState } from '../store';
 import { fetchMotors } from '../store/motors.slice';
 import { MotorGrid } from '../components/motors/MotorGrid';
 import { AlertBanner } from '../components/alerts/AlertBanner';
+import { RoleGate } from '../components/routes/RoleGate';
 
 /**
- * Main dashboard page — shows the grid of 15 motors and active alerts.
- * Waits for auth token before fetching. Shows skeleton until data arrives.
+ * Main dashboard page — shows the grid of 15 motors.
+ * Layout: header with action buttons, then grid in a differentiated container.
+ * AlertBanner renders as floating toasts (position: fixed), outside the flow.
  */
 export function DashboardPage() {
   const dispatch = useDispatch<AppDispatch>();
@@ -24,6 +26,7 @@ export function DashboardPage() {
   return (
     <div className="dashboard">
       <AlertBanner />
+
       <div className="dashboard-header">
         <h1>Vista General de Planta</h1>
         <div className="dashboard-links">
@@ -33,19 +36,27 @@ export function DashboardPage() {
             rel="noopener noreferrer"
             className="grafana-link"
           >
-            📊 Grafana
+            <i className="fa-solid fa-chart-line" aria-hidden="true" /> Grafana
           </a>
           <Link to="/referencia" className="ref-link">
-            📋 Referencia de estados
+            <i className="fa-solid fa-book" aria-hidden="true" /> Referencia
           </Link>
+          <RoleGate minimumRole="admin">
+            <Link to="/config" className="ref-link">
+              <i className="fa-solid fa-gear" aria-hidden="true" /> Configuración
+            </Link>
+          </RoleGate>
         </div>
       </div>
-      {!initialized ? <DashboardSkeleton /> : <MotorGrid />}
+
+      <div className="dashboard-grid-container">
+        {!initialized ? <DashboardSkeleton /> : <MotorGrid />}
+      </div>
     </div>
   );
 }
 
-/** Skeleton grid matching the 15-card layout. */
+/** Skeleton grid matching the 3-column × 5-row layout. */
 function DashboardSkeleton() {
   return (
     <div className="motor-grid">

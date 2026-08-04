@@ -153,6 +153,11 @@ export const motorsSlice = createSlice({
       const seconds = action.payload.secondsRemaining;
       motor.restartSecondsRemaining = seconds > 0 ? seconds : null;
     },
+
+    /** Reset initialized flag to force a re-fetch on next dashboard visit. */
+    invalidateMotors(state) {
+      state.initialized = false;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -222,4 +227,4 @@ export const motorsSlice = createSlice({
   },
 });
 
-export const { telemetryReceived, statusChanged, restartProgressUpdate } = motorsSlice.actions;
+export const { telemetryReceived, statusChanged, restartProgressUpdate, invalidateMotors } = motorsSlice.actions;
