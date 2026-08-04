@@ -49,7 +49,25 @@
 ---
 
 ## Notas
-- El motor en "under_review" con valores normales no vuelve solo a "Saludable" — falta lógica (punto 1).
+- Auto-recovery implementado: el motor en "under_review" vuelve a "Saludable" si las lecturas se normalizan.
 - Los embeddings del RAG ya incluyen fragments de estados (20 en MongoDB).
-- MySQL tiene ~15K readings tras ~1h de simulación. El cron de retención corrió 1 vez.
-- Si el sistema crece (más plantas/motores), el monolito con estado en memoria es el primer cuello de botella, no el broker MQTT.
+- Redis es fuente de verdad para estado de evaluación. Keyspace notifications documentadas en `docs/23-scaling-guide.md`.
+
+---
+
+## Sprint — 2026-08-04
+
+### Pendientes
+
+1. **FontAwesome en todo el sistema**
+   - Reemplazar iconos Unicode (▲ ⚠ ✕ ● ↻ ⏸) por iconos FA profesionales.
+   - StatusBadge, cards, botones, alertas.
+   - Instalar `@fortawesome/react-fontawesome` + packs necesarios.
+
+2. **Sección de configuración (admin only)**
+   - Página `/config` accesible solo para rol `admin`.
+   - **CRUD de motores:** agregar, editar nombre/ubicación/tipo conexión, eliminar.
+   - **Editar umbrales por sensor:** healthyMax, warningMax, criticalMax por motor_sensor.
+   - **Backend:** endpoints REST protegidos con RolesGuard (admin).
+   - **Frontend:** formularios con validación.
+   - Documentar en `docs/24-config-module.md` si corresponde.
