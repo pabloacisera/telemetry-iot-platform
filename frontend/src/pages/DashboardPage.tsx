@@ -28,7 +28,7 @@ export function DashboardPage() {
         <h1>Vista General de Planta</h1>
         <div className="dashboard-links">
           <a
-            href="http://localhost:4002"
+            href="http://localhost:4002/grafana/"
             target="_blank"
             rel="noopener noreferrer"
             className="grafana-link"
