@@ -35,31 +35,32 @@ const STATUS_LABELS: Record<string, string> = {
   fault_persistent: 'Falla persistente',
 };
 
-/** Status icons for accessibility (not only color). */
+/** FontAwesome icon classes per status — professional and clear. */
 const STATUS_ICONS: Record<string, string> = {
-  healthy: '●',
-  ok: '●',
-  under_review: '▲',
-  shutting_down: '■',
-  restarting: '↻',
-  disabled: '✕',
-  manual_shutdown: '⏸',
-  fault: '⚠',
-  fault_persistent: '⚠',
+  healthy: 'fa-solid fa-circle-check',
+  ok: 'fa-solid fa-circle-check',
+  under_review: 'fa-solid fa-triangle-exclamation',
+  shutting_down: 'fa-solid fa-stop',
+  restarting: 'fa-solid fa-rotate',
+  disabled: 'fa-solid fa-circle-xmark',
+  manual_shutdown: 'fa-solid fa-pause',
+  fault: 'fa-solid fa-bolt',
+  fault_persistent: 'fa-solid fa-bolt',
 };
 
 /**
  * Colored status badge — used in motor cards and sensor charts.
  * ISA-101: combines color + icon + text to not depend on color alone.
+ * Uses FontAwesome icons via CDN.
  */
 export function StatusBadge({ status }: StatusBadgeProps) {
   const color = STATUS_COLORS[status] || '#9ca3af';
   const label = STATUS_LABELS[status] || status.replace(/_/g, ' ');
-  const icon = STATUS_ICONS[status] || '●';
+  const iconClass = STATUS_ICONS[status] || 'fa-solid fa-circle';
 
   return (
     <span className="status-badge" aria-label={`Estado: ${label}`}>
-      <span className="badge-icon" style={{ color }} aria-hidden="true">{icon}</span>
+      <i className={`badge-icon ${iconClass}`} style={{ color }} aria-hidden="true" />
       <span style={{ color }}>{label}</span>
     </span>
   );

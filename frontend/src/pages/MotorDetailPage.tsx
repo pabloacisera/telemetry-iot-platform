@@ -81,7 +81,7 @@ export function MotorDetailPage() {
           onClick={() => navigate('/dashboard')}
           aria-label="Volver al panel"
         >
-          &larr; Volver
+          <i className="fa-solid fa-arrow-left" aria-hidden="true" /> Volver
         </button>
         <h1>{motor.code} — {motor.name}</h1>
         <StatusBadge status={motor.status} />
@@ -100,7 +100,7 @@ export function MotorDetailPage() {
               disabled={cmdLoading || isRestarting}
               onClick={handleRestart}
             >
-              Arrancar
+              <i className="fa-solid fa-play" aria-hidden="true" /> Arrancar
             </button>
           ) : (
             <>
@@ -110,7 +110,7 @@ export function MotorDetailPage() {
                 disabled={!canStop || cmdLoading}
                 onClick={handleStop}
               >
-                Detener
+                <i className="fa-solid fa-stop" aria-hidden="true" /> Detener
               </button>
               <button
                 type="button"
@@ -118,7 +118,7 @@ export function MotorDetailPage() {
                 disabled={!canRestart || cmdLoading}
                 onClick={handleRestart}
               >
-                Reiniciar
+                <i className="fa-solid fa-rotate" aria-hidden="true" /> Reiniciar
               </button>
             </>
           )}
