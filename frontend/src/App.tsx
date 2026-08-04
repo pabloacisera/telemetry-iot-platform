@@ -25,10 +25,15 @@ function App() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const user = useSelector((state: RootState) => state.auth.user);
+
   return (
     <BrowserRouter>
       <Routes>
-        <Route path="/login" element={<LoginPage />} />
+        <Route
+          path="/login"
+          element={user ? <Navigate to="/dashboard" /> : <LoginPage />}
+        />
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/motors/:id" element={<MotorDetailPage />} />
