@@ -154,9 +154,10 @@ export const motorsSlice = createSlice({
       motor.restartSecondsRemaining = seconds > 0 ? seconds : null;
     },
 
-    /** Reset initialized flag to force a re-fetch on next dashboard visit. */
+    /** Reset initialized flag and clear data to force a full re-fetch. */
     invalidateMotors(state) {
       state.initialized = false;
+      state.byId = {};
     },
   },
   extraReducers: (builder) => {

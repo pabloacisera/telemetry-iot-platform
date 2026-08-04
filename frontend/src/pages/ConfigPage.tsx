@@ -100,7 +100,7 @@ export function ConfigPage() {
   return (
     <div className="config-page">
       <header className="config-header">
-        <button type="button" className="back-button" onClick={() => navigate('/dashboard')}>
+        <button type="button" className="back-button" onClick={() => { if (dirty) dispatch(invalidateMotors()); navigate('/dashboard'); }}>
           <i className="fa-solid fa-arrow-left" aria-hidden="true" /> Volver
         </button>
         <h1>Configuración de Motores</h1>
