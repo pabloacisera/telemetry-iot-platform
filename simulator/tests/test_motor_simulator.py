@@ -115,7 +115,8 @@ class TestMotorCommandHandling:
         await handle_motor_command(simulator, mock_client, payload)
 
         assert simulator.state == "powered_off"
-        mock_client.publish.assert_called_once()
+        # Publishes 2 messages: offline status + command ack
+        assert mock_client.publish.call_count == 2
 
 
 class TestSensorCommandHandling:
