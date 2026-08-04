@@ -7,6 +7,7 @@ import { LoginPage } from './pages/LoginPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { MotorDetailPage } from './pages/MotorDetailPage';
 import { ReferencePage } from './pages/ReferencePage';
+import { ConfigPage } from './pages/ConfigPage';
 import { ProtectedRoute } from './components/routes/ProtectedRoute';
 
 /**
@@ -38,6 +39,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/motors/:id" element={<MotorDetailPage />} />
           <Route path="/referencia" element={<ReferencePage />} />
+          <Route path="/config" element={<ConfigPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Routes>
