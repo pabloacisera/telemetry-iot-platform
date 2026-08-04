@@ -9,9 +9,9 @@ interface StatusBadgeProps {
  */
 const STATUS_COLORS: Record<string, string> = {
   // Normal / operational — neutral
-  healthy: '#6b7280',       // gray
-  ok: '#6b7280',            // gray
-  manual_shutdown: '#6b7280', // gray
+  healthy: '#22c55e',       // green (operating normally)
+  ok: '#22c55e',            // green
+  manual_shutdown: '#6b7280', // gray (intentional stop)
 
   // Alarm states — saturated
   under_review: '#f59e0b',  // amber (warning)
