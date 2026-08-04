@@ -21,10 +21,10 @@ async function main(): Promise<void> {
       plausibleMin: 0.0,
       plausibleMax: 20.0,
       defaultHealthyMax: 1.8,
-      defaultWarningMax: 4.5,
+      defaultWarningMax: 2.8,
       defaultCriticalMax: 4.5,
       sourceReference:
-        'ISO 10816-3 zones A-D for Class I motors. Sources: vibromera.eu, fabrico.io/blog/iso-10816-3',
+        'ISO 10816-3 zones A-D for Class I motors. Zone A: 0-1.8, B: 1.8-4.5, C: 4.5-7.1. Sources: vibromera.eu, fabrico.io/blog/iso-10816-3',
     },
   });
 
@@ -38,7 +38,7 @@ async function main(): Promise<void> {
       plausibleMin: 10.0,
       plausibleMax: 150.0,
       defaultHealthyMax: 70.0,
-      defaultWarningMax: 90.0,
+      defaultWarningMax: 80.0,
       defaultCriticalMax: 90.0,
       sourceReference:
         'NEMA MG-1 Class B. Surface ≈ winding-30°C. Source: engineeringtoolbox.com',
@@ -50,15 +50,15 @@ async function main(): Promise<void> {
     update: {},
     create: {
       sensorType: 'current',
-      standardName: 'Nameplate rated ×1.05/×1.3',
+      standardName: 'Nameplate rated ×1.05/×1.15/×1.3',
       unit: 'A',
       plausibleMin: 0.0,
       plausibleMax: 100.0,
       defaultHealthyMax: 1.05,
-      defaultWarningMax: 1.3,
+      defaultWarningMax: 1.15,
       defaultCriticalMax: 1.3,
       sourceReference:
-        'De facto standard: overcurrent = mechanical overload. >1.3x = immediate action.',
+        'De facto standard: overcurrent = mechanical overload. >1.15x = warning, >1.3x = immediate action.',
     },
   });
 
@@ -95,9 +95,9 @@ async function main(): Promise<void> {
     });
 
     const sensorDefs = [
-      { type: 'temperature', healthy: 70.0, warning: 90.0, critical: 90.0 },
-      { type: 'vibration', healthy: 1.8, warning: 4.5, critical: 4.5 },
-      { type: 'current', healthy: m.rated * 1.05, warning: m.rated * 1.3, critical: m.rated * 1.3 },
+      { type: 'temperature', healthy: 70.0, warning: 80.0, critical: 90.0 },
+      { type: 'vibration', healthy: 1.8, warning: 2.8, critical: 4.5 },
+      { type: 'current', healthy: m.rated * 1.05, warning: m.rated * 1.15, critical: m.rated * 1.3 },
     ];
 
     for (const s of sensorDefs) {
