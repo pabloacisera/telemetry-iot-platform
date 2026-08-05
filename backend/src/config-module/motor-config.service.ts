@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma';
 import { MqttProvisioningService } from './mqtt-provisioning.service';
 import { CommandService } from '../command/command.service';
 import { TelemetryConsumerService } from '../telemetry/telemetry-consumer.service';
+import { TelemetryEvaluationService } from '../telemetry/telemetry-evaluation.service';
 import { CreateMotorDto, UpdateMotorDto, UpdateThresholdsDto } from './dto';
 
 /** Default sensor types created for every new motor — loaded from sensor_standards table. */
@@ -37,6 +38,7 @@ export class MotorConfigService {
     private readonly mqttProvisioning: MqttProvisioningService,
     private readonly commandService: CommandService,
     private readonly telemetryConsumer: TelemetryConsumerService,
+    private readonly telemetryEvaluation: TelemetryEvaluationService,
   ) {}
 
   /**
@@ -172,25 +174,28 @@ export class MotorConfigService {
   }
 
   /**
-   * Delete a motor, its sensors, and deprovision MQTT credentials.
+   * Soft-delete a motor, its sensors, and deprovision MQTT credentials.
    */
   async deleteMotor(motorId: number) {
-    const motor = await this.prisma.motor.findUnique({
-      where: { id: motorId },
+    const motor = await this.prisma.motor.findFirst({
+      where: { id: motorId, deletedAt: null },
     });
     if (!motor) {
       throw new NotFoundException(`Motor ${motorId} no encontrado`);
     }
 
-    // Delete related data in order (due to FK constraints)
+    const now = new Date();
+
+    // Soft-delete motor + sensors
     await this.prisma.$transaction([
-      this.prisma.sensorFault.deleteMany({
-        where: { motorSensor: { motorId } },
+      this.prisma.motorSensor.updateMany({
+        where: { motorId },
+        data: { deletedAt: now },
       }),
-      this.prisma.motorSensor.deleteMany({ where: { motorId } }),
-      this.prisma.alert.deleteMany({ where: { motorId } }),
-      this.prisma.motorStatusHistory.deleteMany({ where: { motorId } }),
-      this.prisma.motor.delete({ where: { id: motorId } }),
+      this.prisma.motor.update({
+        where: { id: motorId },
+        data: { deletedAt: now },
+      }),
     ]);
 
     // Unregister from telemetry pipeline
@@ -233,7 +238,7 @@ export class MotorConfigService {
       );
     }
 
-    return this.prisma.motorSensor.update({
+    const updated = await this.prisma.motorSensor.update({
       where: { id: sensorId },
       data: {
         ...(dto.healthyMax !== undefined && { healthyMax: dto.healthyMax }),
@@ -241,14 +246,25 @@ export class MotorConfigService {
         ...(dto.criticalMax !== undefined && { criticalMax: dto.criticalMax }),
       },
     });
+
+    // Hot-reload: update in-memory thresholds so evaluation uses new values immediately
+    this.telemetryEvaluation.updateSensorThresholds(sensorId, {
+      healthyMax: dto.healthyMax,
+      warningMax: dto.warningMax,
+      criticalMax: dto.criticalMax,
+    });
+
+    return updated;
   }
 
   /**
    * Get all motors with sensors (for the config page listing).
+   * Excludes soft-deleted motors.
    */
   async getAllMotors() {
     return this.prisma.motor.findMany({
-      include: { sensors: true },
+      where: { deletedAt: null },
+      include: { sensors: { where: { deletedAt: null } } },
       orderBy: { id: 'asc' },
     });
   }

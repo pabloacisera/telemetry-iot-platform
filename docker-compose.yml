@@ -113,6 +113,8 @@ services:
     environment:
       MQTT_BROKER_HOST: broker-mqtt
       MQTT_BROKER_PORT: 1883
+    volumes:
+      - ./simulator/data:/app/simulator/data
     depends_on:
       telemetry-broker-mqtt:
         condition: service_healthy

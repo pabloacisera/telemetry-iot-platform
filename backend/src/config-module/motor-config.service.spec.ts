@@ -4,6 +4,7 @@ import { MotorConfigService } from './motor-config.service';
 import { MqttProvisioningService } from './mqtt-provisioning.service';
 import { CommandService } from '../command/command.service';
 import { TelemetryConsumerService } from '../telemetry/telemetry-consumer.service';
+import { TelemetryEvaluationService } from '../telemetry/telemetry-evaluation.service';
 import { PrismaService } from '../prisma';
 
 describe('MotorConfigService', () => {
@@ -11,6 +12,7 @@ describe('MotorConfigService', () => {
   let prisma: {
     motor: {
       findUnique: jest.Mock;
+      findFirst: jest.Mock;
       findMany: jest.Mock;
       create: jest.Mock;
       update: jest.Mock;
@@ -19,6 +21,7 @@ describe('MotorConfigService', () => {
     motorSensor: {
       findFirst: jest.Mock;
       update: jest.Mock;
+      updateMany: jest.Mock;
       deleteMany: jest.Mock;
     };
     sensorFault: { deleteMany: jest.Mock };
@@ -39,11 +42,15 @@ describe('MotorConfigService', () => {
     registerMotor: jest.Mock;
     unregisterMotor: jest.Mock;
   };
+  let telemetryEvaluation: {
+    updateSensorThresholds: jest.Mock;
+  };
 
   beforeEach(async () => {
     prisma = {
       motor: {
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
         findMany: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
@@ -52,6 +59,7 @@ describe('MotorConfigService', () => {
       motorSensor: {
         findFirst: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn(),
         deleteMany: jest.fn(),
       },
       sensorFault: { deleteMany: jest.fn() },
@@ -93,6 +101,9 @@ describe('MotorConfigService', () => {
       registerMotor: jest.fn().mockResolvedValue(undefined),
       unregisterMotor: jest.fn(),
     };
+    telemetryEvaluation = {
+      updateSensorThresholds: jest.fn(),
+    };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -101,6 +112,7 @@ describe('MotorConfigService', () => {
         { provide: MqttProvisioningService, useValue: mqttProvisioning },
         { provide: CommandService, useValue: commandService },
         { provide: TelemetryConsumerService, useValue: telemetryConsumer },
+        { provide: TelemetryEvaluationService, useValue: telemetryEvaluation },
       ],
     }).compile();
 
@@ -208,7 +220,7 @@ describe('MotorConfigService', () => {
 
   describe('deleteMotor', () => {
     it('should delete motor and deprovision MQTT', async () => {
-      prisma.motor.findUnique.mockResolvedValue({ id: 5, code: 'MOT-5' });
+      prisma.motor.findFirst.mockResolvedValue({ id: 5, code: 'MOT-5' });
       prisma.$transaction.mockResolvedValue([]);
 
       const result = await service.deleteMotor(5);
@@ -221,7 +233,7 @@ describe('MotorConfigService', () => {
     });
 
     it('should throw NotFoundException if motor does not exist', async () => {
-      prisma.motor.findUnique.mockResolvedValue(null);
+      prisma.motor.findFirst.mockResolvedValue(null);
 
       await expect(service.deleteMotor(99)).rejects.toThrow(NotFoundException);
     });
@@ -246,6 +258,10 @@ describe('MotorConfigService', () => {
       const result = await service.updateThresholds(1, 10, { healthyMax: 75 });
 
       expect(result.healthyMax).toBe(75);
+      expect(telemetryEvaluation.updateSensorThresholds).toHaveBeenCalledWith(
+        10,
+        { healthyMax: 75, warningMax: undefined, criticalMax: undefined },
+      );
     });
 
     it('should throw NotFoundException if sensor not found for motor', async () => {
@@ -283,7 +299,8 @@ describe('MotorConfigService', () => {
 
       expect(result).toHaveLength(2);
       expect(prisma.motor.findMany).toHaveBeenCalledWith({
-        include: { sensors: true },
+        where: { deletedAt: null },
+        include: { sensors: { where: { deletedAt: null } } },
         orderBy: { id: 'asc' },
       });
     });

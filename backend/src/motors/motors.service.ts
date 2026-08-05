@@ -18,7 +18,8 @@ export class MotorsService {
   /** Get all motors with their sensors and last values (for the grid view). */
   async getAll() {
     const motors = await this.prisma.motor.findMany({
-      include: { sensors: true },
+      where: { deletedAt: null },
+      include: { sensors: { where: { deletedAt: null } } },
     });
 
     const snapshots = await this.cache.getAllSnapshots();
@@ -50,12 +51,12 @@ export class MotorsService {
 
   /** Get a single motor with detailed sensor info, active alerts, and recent history. */
   async getById(motorId: number) {
-    const motor = await this.prisma.motor.findUnique({
-      where: { id: motorId },
+    const motor = await this.prisma.motor.findFirst({
+      where: { id: motorId, deletedAt: null },
       include: {
-        sensors: true,
+        sensors: { where: { deletedAt: null } },
         alerts: {
-          where: { resolvedAt: null },
+          where: { resolvedAt: null, deletedAt: null },
           orderBy: { triggeredAt: 'desc' },
           take: 5,
         },

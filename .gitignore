@@ -39,3 +39,6 @@ logs/
 # Coverage
 coverage/
 .nyc_output/
+
+# Simulator hot-reload persistence (contains MQTT passwords)
+simulator/data/hot_motors.csv

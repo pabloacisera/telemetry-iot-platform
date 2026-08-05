@@ -21,6 +21,7 @@ from dotenv import load_dotenv
 
 from simulator.config import build_motors_config, MotorConfig
 from simulator.motor_simulator import MotorSimulator
+from simulator.persistence import load_hot_motors, save_motor, remove_motor
 
 # Load environment variables
 load_dotenv()
@@ -46,9 +47,20 @@ def get_motors() -> list[MotorConfig]:
 
     In production, passwords come from environment variables.
     For development, uses the default dev passwords matching mosquitto/generate_passwords.py.
+    Includes any hot-reloaded motors persisted from previous runs.
     """
     password_prefix = os.getenv("MQTT_ESP32_PASS_PREFIX", "esp32_dev_pass_")
-    return build_motors_config(mqtt_pass_prefix=password_prefix)
+    motors = build_motors_config(mqtt_pass_prefix=password_prefix)
+
+    # Restore hot-reloaded motors from persistence file
+    hot_motors = load_hot_motors()
+    existing_ids = {m.motor_id for m in motors}
+    for hm in hot_motors:
+        if hm.motor_id not in existing_ids:
+            motors.append(hm)
+            existing_ids.add(hm.motor_id)
+
+    return motors
 
 
 async def run_all(broker_host: str, broker_port: int, motors: list[MotorConfig]) -> None:
@@ -179,6 +191,9 @@ async def _handle_motor_added(
         mqtt_pass=mqtt_pass,
     )
 
+    # Persist so the motor survives simulator restarts
+    save_motor(config)
+
     sim = MotorSimulator(config=config, broker_host=broker_host, broker_port=broker_port)
     task = asyncio.create_task(sim.run())
     active[motor_id] = (sim, task)
@@ -205,6 +220,10 @@ async def _handle_motor_removed(
         await task
     except asyncio.CancelledError:
         pass
+
+    # Remove from persistence file
+    remove_motor(motor_id)
+
     logger.info(f"Hot-reload: stopped simulator for motor {motor_id}")
 
 

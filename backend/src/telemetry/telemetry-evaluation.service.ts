@@ -249,4 +249,25 @@ export class TelemetryEvaluationService implements OnModuleInit {
     this.motorEval.unregisterMotor(motorId);
     this.logger.log(`Hot-unregistered motor ${motorId} from evaluation`);
   }
+
+  /**
+   * Update sensor thresholds in-memory (hot-reload on config change).
+   * Called by MotorConfigService after persisting new thresholds to DB.
+   */
+  updateSensorThresholds(
+    sensorId: number,
+    thresholds: { healthyMax?: number; warningMax?: number; criticalMax?: number },
+  ): void {
+    const meta = this.sensorMeta.get(sensorId);
+    if (!meta) return;
+
+    if (thresholds.healthyMax !== undefined) meta.healthyMax = thresholds.healthyMax;
+    if (thresholds.warningMax !== undefined) meta.warningMax = thresholds.warningMax;
+    if (thresholds.criticalMax !== undefined) meta.criticalMax = thresholds.criticalMax;
+
+    this.logger.log(
+      `Thresholds updated in-memory for sensor ${sensorId}: ` +
+      `healthy<${meta.healthyMax} warning<${meta.warningMax} critical<${meta.criticalMax}`,
+    );
+  }
 }

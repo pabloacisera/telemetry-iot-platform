@@ -22,6 +22,7 @@ model Motor {
   status          String       @default("healthy") @db.VarChar(30)
   statusChangedAt DateTime?    @map("status_changed_at")
   createdAt       DateTime     @default(now()) @map("created_at")
+  deletedAt       DateTime?    @map("deleted_at")
 
   sensors       MotorSensor[]
   alerts        Alert[]
@@ -64,6 +65,7 @@ model MotorSensor {
   statusChangedAt DateTime? @map("status_changed_at")
   lastValue       Float?    @map("last_value")
   lastReadingAt   DateTime? @map("last_reading_at")
+  deletedAt       DateTime? @map("deleted_at")
 
   motor  Motor         @relation(fields: [motorId], references: [id])
   faults SensorFault[]
@@ -118,6 +120,7 @@ model Alert {
   resolvedAt     DateTime? @map("resolved_at")
   resolvedBy     Int?      @map("resolved_by")
   resolutionNote String?   @map("resolution_note") @db.Text
+  deletedAt      DateTime? @map("deleted_at")
 
   motor Motor @relation(fields: [motorId], references: [id])
 
@@ -164,10 +167,11 @@ model MotorStatusHistory {
 // ============================================================
 
 model User {
-  id           Int    @id @default(autoincrement())
-  email        String @unique @db.VarChar(150)
-  passwordHash String @map("password_hash") @db.VarChar(255)
-  role         String @db.VarChar(20)
+  id           Int       @id @default(autoincrement())
+  email        String    @unique @db.VarChar(150)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  role         String    @db.VarChar(20)
+  deletedAt    DateTime? @map("deleted_at")
 
   refreshTokens RefreshToken[]
 
