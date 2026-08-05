@@ -31,6 +31,7 @@ interface AlertEvent {
   id: number;
   motorId: number;
   type: string;
+  metadata: Record<string, unknown> | null;
   triggeredAt: string;
   resolvedAt: string | null;
 }

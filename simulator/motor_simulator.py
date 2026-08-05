@@ -48,6 +48,7 @@ class MotorSimulator:
         vib_cfg = SENSOR_DEFAULTS["vibration"]
         cur_cfg = SENSOR_DEFAULTS["current"]
         rated = self.config.rated_current_a
+        anomaly_prob = self.config.anomaly_probability
 
         return {
             SensorType.TEMPERATURE: Sensor(
@@ -57,6 +58,7 @@ class MotorSimulator:
                 noise_std=temp_cfg["noise_std"],
                 plausible_min=temp_cfg["plausible_min"],
                 plausible_max=temp_cfg["plausible_max"],
+                anomaly_probability=anomaly_prob,
             ),
             SensorType.VIBRATION: Sensor(
                 sensor_type=SensorType.VIBRATION,
@@ -65,6 +67,7 @@ class MotorSimulator:
                 noise_std=vib_cfg["noise_std"],
                 plausible_min=vib_cfg["plausible_min"],
                 plausible_max=vib_cfg["plausible_max"],
+                anomaly_probability=anomaly_prob * 0.5,  # vibration less likely
             ),
             SensorType.CURRENT: Sensor(
                 sensor_type=SensorType.CURRENT,
@@ -73,6 +76,7 @@ class MotorSimulator:
                 noise_std=rated * cur_cfg["noise_std_factor"],
                 plausible_min=cur_cfg["plausible_min"],
                 plausible_max=rated * cur_cfg["plausible_max_factor"],
+                anomaly_probability=anomaly_prob,
             ),
         }
 

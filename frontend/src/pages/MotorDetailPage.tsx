@@ -69,8 +69,9 @@ export function MotorDetailPage() {
 
   const isRestarting = motor.status === 'restarting' || motor.status === 'shutting_down';
   const isStopped = motor.status === 'manual_shutdown';
-  const canStop = !isRestarting && !isStopped && (motor.status === 'healthy' || motor.status === 'under_review');
-  const canRestart = !isRestarting && (motor.status === 'under_review' || motor.status === 'manual_shutdown' || motor.status === 'disabled');
+  const isAlarm = motor.status === 'alarm';
+  const canStop = !isRestarting && !isStopped && (motor.status === 'healthy' || motor.status === 'under_review' || isAlarm);
+  const canRestart = !isRestarting && (isAlarm || motor.status === 'under_review' || motor.status === 'manual_shutdown' || motor.status === 'disabled');
 
   return (
     <div className="motor-detail">

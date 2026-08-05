@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma';
 import { RealtimeGateway } from '../realtime';
+import type { Prisma } from '@prisma/client';
 
 /**
  * Applies and audits state transitions for motors and sensors.
@@ -73,19 +74,22 @@ export class StatusTransitionService {
   }
 
   /** Create a motor-level alert and emit it via WebSocket. */
-  async createAlert(motorId: number, type: string): Promise<void> {
+  async createAlert(motorId: number, type: string, metadata?: Record<string, unknown>): Promise<void> {
+    const jsonMeta = metadata ? (metadata as Prisma.InputJsonValue) : undefined;
     const alert = await this.prisma.alert.create({
-      data: { motorId, type, triggeredAt: new Date() },
+      data: { motorId, type, metadata: jsonMeta, triggeredAt: new Date() },
     });
 
     this.realtime.emitAlert(motorId, {
       id: alert.id,
       motorId,
       type,
+      metadata: metadata ?? null,
       triggeredAt: alert.triggeredAt.toISOString(),
     });
 
-    this.logger.warn(`Alert: motor ${motorId}, type ${type}`);
+    const metaStr = metadata ? ` ${JSON.stringify(metadata)}` : '';
+    this.logger.warn(`Alert: motor ${motorId}, type ${type}${metaStr}`);
   }
 
   /** Create a sensor-level fault record. */

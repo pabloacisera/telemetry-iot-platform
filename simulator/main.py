@@ -148,8 +148,12 @@ async def _hot_reload_listener(
 
                     if topic == "system/simulator/motor-added":
                         await _handle_motor_added(payload, active, broker_host, broker_port)
+                        # Clear retained message so it's not re-delivered on reconnect
+                        await client.publish("system/simulator/motor-added", b"", qos=1, retain=True)
                     elif topic == "system/simulator/motor-removed":
                         await _handle_motor_removed(payload, active)
+                        # Clear retained message so it's not re-delivered on reconnect
+                        await client.publish("system/simulator/motor-removed", b"", qos=1, retain=True)
 
         except MqttError as e:
             logger.warning(f"Hot-reload listener connection lost ({e}), reconnecting in 5s...")

@@ -191,6 +191,7 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 .alert-toast-icon { color: var(--red); flex-shrink: 0; margin-top: 0.125rem; }
 .alert-toast-content { flex: 1; }
 .alert-toast-message { color: var(--text); }
+.alert-toast-cause { color: #f97316; font-size: 0.75rem; font-weight: 500; margin-top: 0.125rem; }
 .alert-toast-time { color: var(--gray); font-size: 0.6875rem; margin-top: 0.25rem; }
 .alert-toast-close {
   background: none; border: none; color: var(--gray); cursor: pointer;

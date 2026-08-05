@@ -105,9 +105,9 @@ export class CommandService implements OnModuleInit {
   }
 
   /** Low-level MQTT publish with QoS 1. */
-  private publish(topic: string, payload: string): Promise<void> {
+  private publish(topic: string, payload: string, retain = false): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.client.publish(topic, payload, { qos: 1 }, (err) => {
+      this.client.publish(topic, payload, { qos: 1, retain }, (err) => {
         if (err) reject(err);
         else resolve();
       });
@@ -127,7 +127,7 @@ export class CommandService implements OnModuleInit {
     mqttPass: string;
   }): Promise<void> {
     const payload = JSON.stringify(data);
-    await this.publish('system/simulator/motor-added', payload);
+    await this.publish('system/simulator/motor-added', payload, true);
     this.logger.log(`Simulator notified: motor-added (motor ${data.motorId})`);
   }
 
@@ -138,7 +138,7 @@ export class CommandService implements OnModuleInit {
    */
   async notifySimulatorMotorRemoved(motorId: number): Promise<void> {
     const payload = JSON.stringify({ motorId });
-    await this.publish('system/simulator/motor-removed', payload);
+    await this.publish('system/simulator/motor-removed', payload, true);
     this.logger.log(`Simulator notified: motor-removed (motor ${motorId})`);
   }
 }

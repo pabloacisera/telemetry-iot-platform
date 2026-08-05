@@ -21,7 +21,7 @@ interface MotorCardProps {
 
 /** States that require operator attention — shown expanded. */
 const ATTENTION_STATES = new Set([
-  'under_review', 'shutting_down', 'restarting', 'disabled',
+  'alarm', 'under_review', 'shutting_down', 'restarting', 'disabled',
 ]);
 
 /**

@@ -6,12 +6,13 @@ Each motor has:
 - rated_current_a: nameplate rated current (used to calculate current thresholds)
 - connection_type: wifi or lan (affects reconnection behavior)
 - mqtt_user/mqtt_pass: per-device MQTT credentials
+- anomaly_probability: chance per reading to start an anomaly episode (default 0.02)
 
 The split between wifi and lan is intentional: motors 1-8 are wifi, motors 9-15 are lan.
 This provides realistic diversity for testing both reconnection grace windows (20s vs 5s).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 
 
@@ -24,6 +25,7 @@ class MotorConfig:
     connection_type: Literal["wifi", "lan"]
     mqtt_user: str
     mqtt_pass: str
+    anomaly_probability: float = 0.02  # 2% per reading to start an episode
 
 
 # Sensor nominal values and ranges (derived from docs/05-thresholds-sources.md)
@@ -52,6 +54,9 @@ SENSOR_DEFAULTS = {
     },
 }
 
+# Motors that are "problematic" — higher anomaly probability for demo purposes
+PROBLEMATIC_MOTORS = {5, 11}
+
 
 def build_motors_config(mqtt_pass_prefix: str = "esp32_dev_pass_") -> list[MotorConfig]:
     """Build the list of 15 motor configurations.
@@ -68,6 +73,9 @@ def build_motors_config(mqtt_pass_prefix: str = "esp32_dev_pass_") -> list[Motor
     ]
 
     for i in range(1, 16):
+        # Problematic motors get higher anomaly probability (10%)
+        anomaly_prob = 0.10 if i in PROBLEMATIC_MOTORS else 0.02
+
         motors.append(
             MotorConfig(
                 motor_id=i,
@@ -75,6 +83,7 @@ def build_motors_config(mqtt_pass_prefix: str = "esp32_dev_pass_") -> list[Motor
                 connection_type="wifi" if i <= 8 else "lan",
                 mqtt_user=f"esp32_motor{i}",
                 mqtt_pass=f"{mqtt_pass_prefix}{i}",
+                anomaly_probability=anomaly_prob,
             )
         )
 

@@ -14,6 +14,7 @@ const STATUS_COLORS: Record<string, string> = {
   manual_shutdown: '#6b7280', // gray (intentional stop)
 
   // Alarm states — saturated
+  alarm: '#f97316',         // orange (alarm — operator attention needed)
   under_review: '#f59e0b',  // amber (warning)
   shutting_down: '#ef4444', // red (critical action)
   restarting: '#3b82f6',    // blue (informational action)
@@ -26,6 +27,7 @@ const STATUS_COLORS: Record<string, string> = {
 const STATUS_LABELS: Record<string, string> = {
   healthy: 'Saludable',
   ok: 'Normal',
+  alarm: 'Alarma',
   under_review: 'En revisión',
   shutting_down: 'Deteniendo',
   restarting: 'Reiniciando',
@@ -39,6 +41,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_ICONS: Record<string, string> = {
   healthy: 'fa-solid fa-circle-check',
   ok: 'fa-solid fa-circle-check',
+  alarm: 'fa-solid fa-triangle-exclamation',
   under_review: 'fa-solid fa-triangle-exclamation',
   shutting_down: 'fa-solid fa-stop',
   restarting: 'fa-solid fa-rotate',

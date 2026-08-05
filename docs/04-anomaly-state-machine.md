@@ -9,6 +9,8 @@ This is the most important business logic in the system. Read it alongside `03-m
   When a single sensor sustains anomalous readings for N consecutive readings, the motor enters ALARM.
 - **Grace period**: configurable per motor (`alarmGracePeriodMs`, default 120000ms / 2 minutes).
   After ALARM is triggered, the operator has this window to intervene before the system trips.
+- **Post-restart cooldown**: 60 seconds after a motor restarts, the alarm threshold is doubled (2N
+  consecutive readings required). This prevents the trip→restart→trip cycle from happening too rapidly.
 - "Warning" zone: value between `warning_max` and `critical_max` (counts as anomalous).
 - "Critical" zone: value > `critical_max` — a single reading triggers **immediate trip** (no grace timer).
 - Default `critical_max` values: vibration >4.5 mm/s, temperature >90°C, current >1.3× rated.
@@ -102,3 +104,16 @@ In the motor detail view, each of the 3 charts has its OWN status badge (`ok`/`f
 motor's general badge. If the vibration badge says `fault: stuck` but temperature and current are `ok` and
 the motor is still `healthy`, the operator knows it's a sensor problem, not a motor problem. The RAG module
 reinforces this in natural language (see `08-rag-flow.md`).
+
+## Alert metadata — cause visibility
+Every alarm/trip alert includes a `metadata` JSON field with cause information:
+
+| Field | Type | Description |
+|---|---|---|
+| `triggerSensorId` | number | Which sensor triggered the alarm (1=temp, 2=vib, 3=current) |
+| `consecutiveReadings` | number | How many consecutive anomalous readings before alarm |
+| `gracePeriodMs` | number | Grace period configured for this motor |
+| `reason` | string | Trip reason: `critical_reading`, `grace_timer_expired`, `recurrence_after_restart` |
+| `cause` | string | Human-readable cause category |
+
+This metadata is displayed in the AlertBanner toast and stored in the `alerts` table for audit.

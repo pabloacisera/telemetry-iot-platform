@@ -160,3 +160,86 @@ grace timer + trip inmediato**:
 ### Tests
 
 - 73/73 tests del backend pasan (8 test suites)
+
+---
+
+## 4. Comportamiento realista del motor de estados
+
+### Problema
+
+El algoritmo de evaluación era demasiado agresivo: los sensores del simulador generaban
+lecturas críticas sueltas (3% de probabilidad, multiplier 1.3-1.8x) que activaban el
+trip inmediato sin usar los contadores consecutivos ni el grace timer. Resultado: un motor
+se reiniciaba cada ~37 segundos. El operador nunca veía la causa del fallo.
+
+### Causa raíz
+
+El simulador generaba anomalías **independientes por lectura** (cada lectura es i.i.d.),
+mientras que el backend esperaba **episodios sostenidos** (contadores consecutivos).
+Además, las lecturas con multiplier >1.64x caían en zona crítica → trip inmediato.
+
+### Solución
+
+Se implementó un modelo de comportamiento realista en 4 partes:
+
+#### 1. Simulador: Episodios de anomalía (`simulator/sensor.py`)
+- Cada sensor puede entrar en un **episodio** de anomalía sostenida (no spikes sueltos)
+- Probabilidad de iniciar episodio: 2% por lectura (motores normales), 10% (motores problemáticos)
+- 3 severidades:
+  - `mild` (40%): Solo zona warning — motor entra en alarm pero se recupera solo
+  - `moderate` (35%): Warning → critical gradual — grace timer da tiempo al operador
+  - `severe` (25%): Critical inmediato — trip real
+- Duración: 4-12 lecturas (60-180 segundos)
+- 15% de chance de recovery prematura por lectura
+- 2 motores problemáticos (IDs 5 y 11) con 10% de probabilidad
+
+#### 2. Backend: Cooldown post-reinicio (`motor-evaluation.service.ts`)
+- Después de un reinicio, el motor tiene 60s de cooldown donde necesita el doble de
+  lecturas consecutivas (2N) para activar alarma
+- Esto evita el ciclo trip→restart→trip→restart
+
+#### 3. Backend: Metadata de causa en alertas
+- Cada alerta incluye `metadata` JSON con: sensor trigger, valor, umbral, razón
+- Campo `metadata` agregado a tabla `alerts` (migración Prisma)
+- `StatusTransitionService.createAlert()` acepta metadata opcional
+
+#### 4. Frontend: Causa visible
+- `StatusBadge`: nuevo estado `alarm` (naranja)
+- `AlertBanner`: muestra "Temperatura · 5 lecturas consecutivas" en el toast
+- `MotorCard`: motores en alarm se muestran expandidos
+- `MotorGrid`: alarm aparece después de shutting_down en prioridad
+- `MotorDetailPage`: botones de stop/restart habilitados en estado alarm
+
+### Archivos modificados
+
+**Simulador:**
+- `simulator/sensor.py` — Episodios con severidad (mild/moderate/severe)
+- `simulator/config.py` — `anomaly_probability` por motor, `PROBLEMATIC_MOTORS`
+- `simulator/motor_simulator.py` — Pass anomaly_probability a sensores
+
+**Backend:**
+- `backend/src/telemetry/motor-evaluation.service.ts` — Cooldown + metadata
+- `backend/src/telemetry/status-transition.service.ts` — createAlert con metadata
+- `backend/prisma/schema.prisma` — Campo `metadata Json?` en Alert
+- `backend/prisma/migrations/20260805205817_add_alert_metadata/` — Migración
+- `backend/src/telemetry/motor-evaluation.service.spec.ts` — Tests de cooldown y metadata
+
+**Frontend:**
+- `frontend/src/components/motors/StatusBadge.tsx` — Estado `alarm`
+- `frontend/src/components/motors/MotorCard.tsx` — `alarm` en ATTENTION_STATES
+- `frontend/src/components/motors/MotorGrid.tsx` — `alarm` en prioridad
+- `frontend/src/components/alerts/AlertBanner.tsx` — Metadata + nuevos tipos
+- `frontend/src/pages/MotorDetailPage.tsx` — Botones para estado `alarm`
+- `frontend/src/store/alerts.slice.ts` — Interface Alert con metadata
+- `frontend/src/store/socket.middleware.ts` — AlertEvent con metadata
+- `frontend/src/index.css` — Estilo `alert-toast-cause`
+
+**Documentación:**
+- `docs/04-anomaly-state-machine.md` — Cooldown, metadata, tipos de alerta
+- `CHANGELOG-2026-08-05.md` — Esta entrada
+
+### Tests
+
+- 78/78 tests del backend pasan (8 test suites, +5 tests nuevos)
+- 11/11 tests del simulador pasan
+- Frontend compila sin errores TypeScript

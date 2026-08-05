@@ -6,11 +6,12 @@ import { MotorCard } from './MotorCard';
 /** Priority order: states that need attention first. */
 const STATUS_PRIORITY: Record<string, number> = {
   disabled: 0,
-  under_review: 1,
-  shutting_down: 2,
-  restarting: 3,
-  manual_shutdown: 4,
-  healthy: 5,
+  shutting_down: 1,
+  alarm: 2,
+  under_review: 3,
+  restarting: 4,
+  manual_shutdown: 5,
+  healthy: 6,
 };
 
 /**

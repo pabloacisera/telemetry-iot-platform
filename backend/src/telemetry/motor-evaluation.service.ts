@@ -21,10 +21,12 @@ import { CacheService } from '../cache';
  *   restarting → healthy (motor comes back online)
  *   trip after previous trip → disabled (requires manual reactivation)
  *
- * REDIS STATE:
- *   state:consecutive:{motorSensorId}  → integer (consecutive anomalous count)
- *   state:escalation:{motorId}         → expiry timestamp
- *   state:auto_restart_used:{motorId}  → boolean
+ * COOLDOWN: After a restart, the motor enters a 60s cooldown period where the
+ * alarm threshold is doubled (2N consecutive readings required). This prevents
+ * the trip→restart→trip cycle from happening too rapidly.
+ *
+ * METADATA: Every alarm/trip alert includes cause information (which sensor,
+ * what value, what threshold) so the operator always knows what happened.
  */
 @Injectable()
 export class MotorEvaluationService {
@@ -44,6 +46,12 @@ export class MotorEvaluationService {
 
   /** Per-sensor consecutive anomalous counter (in-memory, backed by Redis). */
   private consecutiveCounters: Map<number, number> = new Map();
+
+  /** Timestamp of last restart per motor (for cooldown). */
+  private lastRestartTime: Map<number, number> = new Map();
+
+  /** How long after a restart the motor needs double readings to alarm (60s). */
+  private static readonly POST_RESTART_COOLDOWN_MS = 60_000;
 
   constructor(
     private readonly statusTransition: StatusTransitionService,
@@ -121,7 +129,7 @@ export class MotorEvaluationService {
 
       // ── IMMEDIATE TRIP: critical reading on healthy/alarm motor ──
       if (isCritical && (motorStatus === 'healthy' || motorStatus === 'alarm')) {
-        await this.triggerTrip(motorId, 'critical_reading');
+        await this.triggerTrip(motorId, 'critical_reading', motorSensorId);
         return;
       }
 
@@ -130,10 +138,15 @@ export class MotorEvaluationService {
         const count = (this.consecutiveCounters.get(motorSensorId) || 0) + 1;
         this.consecutiveCounters.set(motorSensorId, count);
 
-        const params = this.motorParams.get(motorId) || { alarmConsecutiveReadings: 5, alarmGracePeriodMs: 120000 };
+        const params = this.motorParams.get(motorId) || { alarmConsecutiveReadings: 5, alarmGracePeriodMs: 120_000 };
 
-        if (motorStatus === 'healthy' && count >= params.alarmConsecutiveReadings) {
-          await this.triggerAlarm(motorId, motorSensorId, params.alarmGracePeriodMs);
+        // Post-restart cooldown: require double readings to trigger alarm
+        const effectiveThreshold = this.isInCooldown(motorId)
+          ? params.alarmConsecutiveReadings * 2
+          : params.alarmConsecutiveReadings;
+
+        if (motorStatus === 'healthy' && count >= effectiveThreshold) {
+          await this.triggerAlarm(motorId, motorSensorId, params.alarmGracePeriodMs, count);
         }
       } else {
         // Normal reading → reset this sensor's counter
@@ -161,6 +174,8 @@ export class MotorEvaluationService {
     }
     await this.cache.persistAutoRestartUsed(motorId, false);
     this.clearGraceTimer(motorId);
+    this.lastRestartTime.set(motorId, Date.now());
+    this.logger.log(`Motor ${motorId}: window reset, cooldown started (${MotorEvaluationService.POST_RESTART_COOLDOWN_MS / 1000}s)`);
   }
 
   /** Called when motor enters restarting state. */
@@ -176,6 +191,7 @@ export class MotorEvaluationService {
   /** Called when motor returns to healthy after restart. */
   onMotorHealthy(motorId: number): void {
     this.motorStatuses.set(motorId, 'healthy');
+    this.lastRestartTime.set(motorId, Date.now());
   }
 
   /** Called when operator manually reactivates a disabled motor. */
@@ -187,6 +203,7 @@ export class MotorEvaluationService {
       this.consecutiveCounters.set(id, 0);
       await this.cache.clearWindow(id);
     }
+    this.lastRestartTime.set(motorId, Date.now());
   }
 
   /** Operator resolves the alarm manually (cancels grace timer). */
@@ -223,6 +240,7 @@ export class MotorEvaluationService {
     this.motorStatuses.delete(motorId);
     this.motorSensorIds.delete(motorId);
     this.motorParams.delete(motorId);
+    this.lastRestartTime.delete(motorId);
     this.clearGraceTimer(motorId);
   }
 
@@ -232,21 +250,32 @@ export class MotorEvaluationService {
 
   /**
    * Transition motor to ALARM state.
-   * Creates a visible alert and starts the grace timer.
+   * Creates a visible alert with metadata and starts the grace timer.
    */
-  private async triggerAlarm(motorId: number, triggerSensorId: number, gracePeriodMs: number): Promise<void> {
+  private async triggerAlarm(
+    motorId: number,
+    triggerSensorId: number,
+    gracePeriodMs: number,
+    consecutiveReadings: number,
+  ): Promise<void> {
     const current = this.motorStatuses.get(motorId);
     if (current !== 'healthy') return;
 
     await this.statusTransition.transitionMotor(motorId, current, 'alarm');
     this.motorStatuses.set(motorId, 'alarm');
 
-    await this.statusTransition.createAlert(motorId, 'motor_alarm');
+    const metadata = {
+      triggerSensorId,
+      consecutiveReadings,
+      gracePeriodMs,
+      cause: 'sustained_anomaly',
+    };
+    await this.statusTransition.createAlert(motorId, 'motor_alarm', metadata);
 
     this.startGraceTimer(motorId, gracePeriodMs);
 
     this.logger.warn(
-      `Motor ${motorId}: ALARM triggered (sensor ${triggerSensorId} sustained anomaly)`,
+      `Motor ${motorId}: ALARM triggered (sensor ${triggerSensorId}, ${consecutiveReadings} consecutive readings)`,
     );
   }
 
@@ -254,7 +283,7 @@ export class MotorEvaluationService {
    * Transition motor to TRIP — forced restart.
    * If already tripped before, DISABLE instead.
    */
-  private async triggerTrip(motorId: number, reason: string): Promise<void> {
+  private async triggerTrip(motorId: number, reason: string, triggerSensorId?: number): Promise<void> {
     const current = this.motorStatuses.get(motorId);
     this.clearGraceTimer(motorId);
 
@@ -262,16 +291,18 @@ export class MotorEvaluationService {
 
     if (alreadyRestarted) {
       // Second failure → disable, do NOT restart again
+      const metadata = { reason, triggerSensorId, cause: 'recurrence_after_restart' };
       await this.statusTransition.transitionMotor(motorId, current || 'alarm', 'disabled');
-      await this.statusTransition.createAlert(motorId, 'motor_disabled');
+      await this.statusTransition.createAlert(motorId, 'motor_disabled', metadata);
       this.motorStatuses.set(motorId, 'disabled');
       this.logger.error(`Motor ${motorId}: DISABLED (recurrence after auto-restart, reason: ${reason})`);
       return;
     }
 
     // First trip → restart
+    const metadata = { reason, triggerSensorId, cause: reason };
     await this.statusTransition.transitionMotor(motorId, current || 'healthy', 'shutting_down');
-    await this.statusTransition.createAlert(motorId, 'motor_trip');
+    await this.statusTransition.createAlert(motorId, 'motor_trip', metadata);
     this.motorStatuses.set(motorId, 'shutting_down');
     await this.commandService.publishRestart(motorId, 'system');
     await this.cache.persistAutoRestartUsed(motorId, true);
@@ -294,6 +325,16 @@ export class MotorEvaluationService {
       if ((this.consecutiveCounters.get(id) || 0) > 0) return false;
     }
     return true;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PRIVATE — COOLDOWN
+  // ═══════════════════════════════════════════════════════════════════
+
+  private isInCooldown(motorId: number): boolean {
+    const lastRestart = this.lastRestartTime.get(motorId);
+    if (!lastRestart) return false;
+    return Date.now() - lastRestart < MotorEvaluationService.POST_RESTART_COOLDOWN_MS;
   }
 
   // ═══════════════════════════════════════════════════════════════════

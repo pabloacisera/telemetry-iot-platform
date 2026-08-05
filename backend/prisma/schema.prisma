@@ -120,6 +120,7 @@ model Alert {
   id             Int       @id @default(autoincrement())
   motorId        Int       @map("motor_id")
   type           String    @db.VarChar(40)
+  metadata       Json?     @db.Json
   triggeredAt    DateTime  @map("triggered_at")
   resolvedAt     DateTime? @map("resolved_at")
   resolvedBy     Int?      @map("resolved_by")
