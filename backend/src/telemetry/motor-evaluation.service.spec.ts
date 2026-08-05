@@ -3,9 +3,14 @@ import type { StatusTransitionService } from './status-transition.service';
 import type { CommandService } from '../command/command.service';
 import type { CacheService } from '../cache';
 
-/** Helper to flush microtask queue (await pending Promises). */
 async function flushPromises(): Promise<void> {
-  return new Promise((resolve) => setImmediate(resolve));
+  // Each await drains one microtask queue. Multiple chained awaits in async
+  // functions create multiple queues, so we flush several times.
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe('MotorEvaluationService', () => {
@@ -28,42 +33,29 @@ describe('MotorEvaluationService', () => {
     restoreEscalationTimers: jest.Mock;
   };
 
-  /** Simulated window state per sensor (mimics Redis behavior). */
-  let windowState: Map<number, boolean[]>;
+  // Default protection params: 3 consecutive readings, 500ms grace (for fast tests)
+  const PARAMS = { alarmConsecutiveReadings: 3, alarmGracePeriodMs: 500 };
+  const MOTOR_ID = 1;
+  const SENSOR_1 = 1;
+  const SENSOR_2 = 2;
+  const SENSOR_3 = 3;
 
   beforeEach(async () => {
-    windowState = new Map([
-      [1, []],
-      [2, []],
-      [3, []],
-    ]);
+    jest.useFakeTimers();
 
     statusTransition = {
       transitionMotor: jest.fn().mockResolvedValue(undefined),
       createAlert: jest.fn().mockResolvedValue(undefined),
     };
     commandService = {
-      publishRestart: jest.fn().mockResolvedValue(undefined),
+      publishRestart: jest.fn().mockResolvedValue('req-id'),
     };
     cache = {
       acquireMotorLock: jest.fn().mockResolvedValue(true),
       releaseMotorLock: jest.fn().mockResolvedValue(undefined),
-      pushToWindow: jest
-        .fn()
-        .mockImplementation((sensorId: number, isAnomalous: boolean) => {
-          const win = windowState.get(sensorId) || [];
-          win.push(isAnomalous);
-          if (win.length > 8) win.shift();
-          windowState.set(sensorId, win);
-          return Promise.resolve([...win]);
-        }),
-      getWindow: jest.fn().mockImplementation((sensorId: number) => {
-        return Promise.resolve(windowState.get(sensorId) || []);
-      }),
-      clearWindow: jest.fn().mockImplementation((sensorId: number) => {
-        windowState.set(sensorId, []);
-        return Promise.resolve();
-      }),
+      pushToWindow: jest.fn().mockResolvedValue([]),
+      getWindow: jest.fn().mockResolvedValue([]),
+      clearWindow: jest.fn().mockResolvedValue(undefined),
       getAutoRestartUsed: jest.fn().mockResolvedValue(false),
       persistAutoRestartUsed: jest.fn().mockResolvedValue(undefined),
       persistEscalationTimer: jest.fn().mockResolvedValue(undefined),
@@ -77,215 +69,278 @@ describe('MotorEvaluationService', () => {
       cache as unknown as CacheService,
     );
 
-    const motorStatuses = new Map<number, string>([[1, 'healthy']]);
-    const motorSensorIds = new Map<number, number[]>([[1, [1, 2, 3]]]);
-    await service.init(motorStatuses, motorSensorIds);
+    const motorStatuses = new Map([[MOTOR_ID, 'healthy']]);
+    const motorSensorIds = new Map([[MOTOR_ID, [SENSOR_1, SENSOR_2, SENSOR_3]]]);
+    const motorParams = new Map([[MOTOR_ID, PARAMS]]);
+
+    await service.init(motorStatuses, motorSensorIds, motorParams);
   });
 
   afterEach(() => {
     jest.useRealTimers();
   });
 
-  describe('sliding window (5/8 rule)', () => {
-    it('should NOT trigger under_review with 4/8 anomalous readings', async () => {
-      for (let i = 0; i < 4; i++) {
-        await service.pushReading(1, 1, true, false);
+  // ─────────────────────────────────────────────────────────────────
+  describe('consecutive anomaly counter → alarm', () => {
+    it('should NOT trigger alarm with fewer than N consecutive readings', async () => {
+      // Push N-1 anomalous readings (2 out of 3 required)
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings - 1; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
-      for (let i = 0; i < 4; i++) {
-        await service.pushReading(1, 1, false, false);
-      }
-      expect(statusTransition.transitionMotor).not.toHaveBeenCalled();
-    });
 
-    it('should trigger under_review with 5/8 anomalous (no alert yet)', async () => {
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
-      }
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'healthy',
-        'under_review',
+      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
+        MOTOR_ID, 'healthy', 'alarm',
       );
-      // No alert at this stage — only internal observation
-      expect(statusTransition.createAlert).not.toHaveBeenCalled();
+      expect(statusTransition.createAlert).not.toHaveBeenCalledWith(MOTOR_ID, 'motor_alarm');
     });
 
-    it('should trigger under_review immediately on a single critical reading', async () => {
-      await service.pushReading(1, 1, true, true);
+    it('should trigger alarm after N consecutive anomalous readings on one sensor', async () => {
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'healthy',
-        'under_review',
+        MOTOR_ID, 'healthy', 'alarm',
+      );
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(MOTOR_ID, 'motor_alarm');
+    });
+
+    it('should reset counter when a normal reading arrives', async () => {
+      // Push N-1 anomalous
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings - 1; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+      // Normal reading → reset counter
+      await service.pushReading(SENSOR_1, MOTOR_ID, false, false);
+      // Push N-1 anomalous again (not enough)
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings - 1; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+
+      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
+        MOTOR_ID, 'healthy', 'alarm',
       );
     });
 
-    it('should not trigger if motor is already in under_review', async () => {
-      // First trigger
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
+    it('should not trigger alarm on a motor already in alarm', async () => {
+      // Trigger first alarm
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
-      statusTransition.transitionMotor.mockClear();
+      const callCount = statusTransition.transitionMotor.mock.calls.length;
 
-      // More anomalous readings — should not re-trigger
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
+      // More anomalous readings — should not trigger again
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
-      expect(statusTransition.transitionMotor).not.toHaveBeenCalled();
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledTimes(callCount);
     });
   });
 
-  describe('distributed lock', () => {
+  // ─────────────────────────────────────────────────────────────────
+  describe('critical reading → immediate trip', () => {
+    it('should trip immediately on critical reading (no grace timer)', async () => {
+      await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID, 'healthy', 'shutting_down',
+      );
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(MOTOR_ID, 'motor_trip');
+      expect(commandService.publishRestart).toHaveBeenCalledWith(MOTOR_ID, 'system');
+    });
+
+    it('should disable motor on critical reading if auto-restart already used', async () => {
+      cache.getAutoRestartUsed.mockResolvedValue(true);
+
+      await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID, 'healthy', 'disabled',
+      );
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(MOTOR_ID, 'motor_disabled');
+      expect(commandService.publishRestart).not.toHaveBeenCalled();
+    });
+
+    it('should trip immediately on critical reading when motor is in alarm', async () => {
+      // First trigger alarm
+      service.setMotorStatus(MOTOR_ID, 'alarm');
+
+      await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID, 'alarm', 'shutting_down',
+      );
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  describe('grace timer expiry → trip', () => {
+    it('should trip after grace timer expires without resolution', async () => {
+      // Trigger alarm
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(MOTOR_ID, 'motor_alarm');
+
+      // Advance time past grace period
+      jest.advanceTimersByTime(PARAMS.alarmGracePeriodMs + 100);
+      await flushPromises();
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID, 'alarm', 'shutting_down',
+      );
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(MOTOR_ID, 'motor_trip');
+      expect(commandService.publishRestart).toHaveBeenCalledWith(MOTOR_ID, 'system');
+    });
+
+    it('should disable motor if grace timer expires after previous auto-restart', async () => {
+      cache.getAutoRestartUsed.mockResolvedValue(true);
+
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+
+      jest.advanceTimersByTime(PARAMS.alarmGracePeriodMs + 100);
+      await flushPromises();
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID, 'alarm', 'disabled',
+      );
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(MOTOR_ID, 'motor_disabled');
+      expect(commandService.publishRestart).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  describe('auto-recovery (alarm → healthy when all sensors normalize)', () => {
+    it('should recover to healthy when all sensor counters reach 0', async () => {
+      // Trigger alarm on SENSOR_1
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+      expect(service.getMotorStatus(MOTOR_ID)).toBe('alarm');
+
+      // Normal readings on all sensors → counters reset
+      await service.pushReading(SENSOR_1, MOTOR_ID, false, false);
+      await service.pushReading(SENSOR_2, MOTOR_ID, false, false);
+      await service.pushReading(SENSOR_3, MOTOR_ID, false, false);
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID, 'alarm', 'healthy',
+      );
+    });
+
+    it('should NOT recover if another sensor still has anomalous count', async () => {
+      // First, build up SENSOR_2 anomalous counter so it's > 0
+      await service.pushReading(SENSOR_2, MOTOR_ID, true, false);
+
+      // Now trigger alarm on SENSOR_1
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+      expect(service.getMotorStatus(MOTOR_ID)).toBe('alarm');
+
+      // SENSOR_1 normalizes — but SENSOR_2 still has count=1
+      await service.pushReading(SENSOR_1, MOTOR_ID, false, false);
+
+      // Should not recover because SENSOR_2 counter > 0
+      const calls = statusTransition.transitionMotor.mock.calls;
+      const recoveredToHealthy = calls.some(
+        ([id, from, to]: [number, string, string]) =>
+          id === MOTOR_ID && from === 'alarm' && to === 'healthy',
+      );
+      expect(recoveredToHealthy).toBe(false);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  describe('operator resolves alarm', () => {
+    it('should cancel grace timer and return to healthy', async () => {
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+      expect(service.getMotorStatus(MOTOR_ID)).toBe('alarm');
+
+      await service.resolveAlarm(MOTOR_ID);
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID, 'alarm', 'healthy',
+      );
+
+      // Grace timer should be cancelled — no trip after timeout
+      jest.advanceTimersByTime(PARAMS.alarmGracePeriodMs + 100);
+      await flushPromises();
+
+      expect(commandService.publishRestart).not.toHaveBeenCalled();
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  describe('motor restart lifecycle', () => {
+    it('should reset all counters on motor restarting', async () => {
+      // Build up some counters
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings - 1; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
+      }
+
+      service.onMotorRestarting(MOTOR_ID);
+
+      expect(service.getMotorStatus(MOTOR_ID)).toBe('restarting');
+      // onMotorRestarting clears in-memory counters and grace timer (not Redis windows)
+      expect(cache.clearEscalationTimer).toHaveBeenCalledWith(MOTOR_ID);
+    });
+
+    it('should reset autoRestartUsed in Redis on resetWindow', async () => {
+      await service.resetWindow(MOTOR_ID);
+
+      expect(cache.persistAutoRestartUsed).toHaveBeenCalledWith(MOTOR_ID, false);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  describe('manual reactivation', () => {
+    it('should reset all state when operator reactivates a disabled motor', async () => {
+      service.setMotorStatus(MOTOR_ID, 'disabled');
+
+      await service.onMotorReactivated(MOTOR_ID);
+
+      expect(service.getMotorStatus(MOTOR_ID)).toBe('healthy');
+      expect(cache.persistAutoRestartUsed).toHaveBeenCalledWith(MOTOR_ID, false);
+    });
+  });
+
+  // ─────────────────────────────────────────────────────────────────
+  describe('lock not acquired', () => {
     it('should skip evaluation if lock is not acquired', async () => {
       cache.acquireMotorLock.mockResolvedValue(false);
 
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
 
-      expect(cache.pushToWindow).not.toHaveBeenCalled();
       expect(statusTransition.transitionMotor).not.toHaveBeenCalled();
     });
-
-    it('should always release lock after evaluation', async () => {
-      await service.pushReading(1, 1, true, false);
-      expect(cache.releaseMotorLock).toHaveBeenCalledWith(1);
-    });
   });
 
-  describe('auto-recovery (under_review → healthy when normalized)', () => {
-    it('should recover to healthy when all sensor windows drop below 5/8', async () => {
-      // Push anomalous to ALL 3 sensors so checkAllWindowsNormalized is meaningful
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
-        await service.pushReading(2, 1, true, false);
-        await service.pushReading(3, 1, true, false);
-      }
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'healthy',
-        'under_review',
-      );
-      statusTransition.transitionMotor.mockClear();
-
-      // Push 3 normals per sensor → window: [T,T,T,T,T,F,F,F] = 5/8 still anomalous (window capped to 8)
-      for (let i = 0; i < 3; i++) {
-        await service.pushReading(1, 1, false, false);
-        await service.pushReading(2, 1, false, false);
-        await service.pushReading(3, 1, false, false);
-      }
-      // At 8 entries: [T,T,T,T,T,F,F,F] = 5 anomalous → NOT recovered
-      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
-        1,
-        'under_review',
-        'healthy',
-      );
-
-      // 4th normal → shifts: [T,T,T,T,F,F,F,F] = 4 anomalous → recovered
-      await service.pushReading(1, 1, false, false);
-      await service.pushReading(2, 1, false, false);
-      await service.pushReading(3, 1, false, false);
-
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'under_review',
-        'healthy',
-      );
-    });
-
-    it('should NOT recover if any sensor still has >=5/8 anomalous', async () => {
-      // Trigger under_review via sensor 1
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
-      }
-      statusTransition.transitionMotor.mockClear();
-
-      // Sensor 1 normalizes but sensor 2 has anomalies
-      cache.getWindow.mockImplementation((sensorId: number) => {
-        if (sensorId === 2)
-          return Promise.resolve([
-            true,
-            true,
-            true,
-            true,
-            true,
-            false,
-            false,
-            false,
-          ]);
-        return Promise.resolve(windowState.get(sensorId) || []);
-      });
-
-      await service.pushReading(1, 1, false, false);
-      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
-        1,
-        'under_review',
-        'healthy',
-      );
-    });
-  });
-
-  describe('escalation (2 min timer)', () => {
-    it('should disable motor if anomaly recurs after auto-restart', async () => {
-      jest.useFakeTimers();
-
-      // First episode → under_review
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
+  // ─────────────────────────────────────────────────────────────────
+  describe('per-sensor independence', () => {
+    it('should alarm based on one sensor without affecting others', async () => {
+      // SENSOR_1 triggers alarm
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
 
-      // Escalation timer fires → force restart
-      cache.getAutoRestartUsed.mockResolvedValue(false);
-      jest.advanceTimersByTime(2 * 60 * 1000);
-      jest.useRealTimers();
-      await flushPromises();
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(MOTOR_ID, 'motor_alarm');
 
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'under_review',
-        'shutting_down',
-      );
+      // SENSOR_2 and SENSOR_3 readings are normal — motor stays in alarm but no second alarm
+      const alertCallsBefore = statusTransition.createAlert.mock.calls.length;
+      await service.pushReading(SENSOR_2, MOTOR_ID, false, false);
+      await service.pushReading(SENSOR_3, MOTOR_ID, false, false);
 
-      // Simulate restart complete → back to healthy
-      service.onMotorRestarting(1);
-      service.onMotorHealthy(1);
-      statusTransition.transitionMotor.mockClear();
-      windowState.set(1, []);
-
-      jest.useFakeTimers();
-
-      // Second episode → under_review again
-      for (let i = 0; i < 5; i++) {
-        await service.pushReading(1, 1, true, false);
-      }
-
-      // This time auto-restart was already used → disabled
-      cache.getAutoRestartUsed.mockResolvedValue(true);
-      jest.advanceTimersByTime(2 * 60 * 1000);
-      jest.useRealTimers();
-      await flushPromises();
-
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'under_review',
-        'disabled',
-      );
-    });
-  });
-
-  describe('window reset on restart', () => {
-    it('should clear all sensor windows in Redis on restart', () => {
-      service.onMotorRestarting(1);
-      expect(cache.clearWindow).toHaveBeenCalledWith(1);
-      expect(cache.clearWindow).toHaveBeenCalledWith(2);
-      expect(cache.clearWindow).toHaveBeenCalledWith(3);
-    });
-  });
-
-  describe('manual reactivation', () => {
-    it('should reset autoRestartUsed in Redis', async () => {
-      await service.onMotorReactivated(1);
-      expect(cache.persistAutoRestartUsed).toHaveBeenCalledWith(1, false);
-      expect(cache.clearWindow).toHaveBeenCalledTimes(3);
+      // No new alarm triggered
+      expect(statusTransition.createAlert.mock.calls.length).toBe(alertCallsBefore);
     });
   });
 });

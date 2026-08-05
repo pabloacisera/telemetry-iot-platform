@@ -5,10 +5,12 @@ This is the most important business logic in the system. Read it alongside `03-m
 
 ## Fixed parameters
 - Reading interval: 15 seconds.
-- Evaluation window: last 8 readings (≈ 2 minutes).
-- Count threshold for "warning" zone alert: 5 out of 8 anomalous readings.
-- "Warning" zone: value between `warning_max` and `critical_max`.
-- "Critical" zone: value > `critical_max` — a single reading triggers immediately (does not wait for window).
+- **Consecutive readings threshold**: configurable per motor (`alarmConsecutiveReadings`, default 5).
+  When a single sensor sustains anomalous readings for N consecutive readings, the motor enters ALARM.
+- **Grace period**: configurable per motor (`alarmGracePeriodMs`, default 120000ms / 2 minutes).
+  After ALARM is triggered, the operator has this window to intervene before the system trips.
+- "Warning" zone: value between `warning_max` and `critical_max` (counts as anomalous).
+- "Critical" zone: value > `critical_max` — a single reading triggers **immediate trip** (no grace timer).
 - Default `critical_max` values: vibration >4.5 mm/s, temperature >90°C, current >1.3× rated.
 - Sensor restart: 5 seconds. Motor restart: 100 seconds (see rationale in `03-mqtt-contract.md`).
 - Reconnection grace window: 20s WiFi / 5s LAN.
@@ -18,8 +20,13 @@ This is the most important business logic in the system. Read it alongside `03-m
 
 ## Motor states
 ```
-healthy → under_review → shutting_down → restarting → healthy (or straight to under_review if still bad)
-                                                    → disabled (if recurs after auto-restart)
+healthy → alarm (N consecutive anomalous readings on any sensor)
+alarm   → shutting_down (grace timer expires without resolution)
+alarm   → healthy (operator resolves OR all sensors normalize)
+healthy → shutting_down (critical reading = immediate trip)
+shutting_down → restarting (command sent to motor)
+restarting → healthy (motor comes back online)
+shutting_down/restarting → disabled (trip after previous auto-restart)
 healthy/under_review → manual_shutdown (explicit operator/admin action)
 ```
 
@@ -30,21 +37,54 @@ fault → fault_persistent (if recurs after auto-restart) → requires manual re
 ```
 
 ## Motor transition rules
-1. Critical reading (value > `critical_max`) → immediate `under_review` + `alerts(type=warning)`.
-2. 5/8 readings in warning zone (`warning_max` < value ≤ `critical_max`) → `under_review` + `alerts(type=warning)`.
-3. If 2 more minutes pass without operator action and still anomalous → `shutting_down` → `restarting` (100s)
-   → publishes MQTT restart command → `alerts(type=forced_restart)`.
-4. **Ring buffer reset**: upon entering `restarting`, the 8-reading window of ALL its sensors is cleared.
-   Evaluation starts from zero when the motor resumes publishing telemetry.
-5. If after auto-restart it accumulates 5/8 anomalous again → `disabled` + `alerts(type=disabled)`,
-   requires manual reactivation (admin/operator). Only 1 automatic attempt per episode.
-6. Upon manually reactivating a `disabled` motor, the automatic attempt counter resets to zero —
-   it's not a permanent ban.
-7. If an operator marks an alert `resolved_at` but readings continue bad → a NEW alert is opened
-   (never reuses the resolved one, so history reflects that the resolution didn't work).
-8. **Widespread sensor failure**: if all 3 sensors of a motor are in `fault`/`fault_persistent`
-   simultaneously, the motor transitions to `under_review` with `alerts(type=sensor_failure_widespread)` —
-   a motor that cannot be observed also needs review.
+
+### 1. Consecutive anomaly → ALARM
+Each sensor maintains an independent consecutive anomalous counter. When a reading falls in the
+warning zone (`warning_max` < value ≤ `critical_max`), the counter increments. When a normal
+reading arrives, the counter resets to 0. If the counter reaches `alarmConsecutiveReadings` (N),
+the motor transitions from `healthy` → `alarm` and a `motor_alarm` alert is created.
+
+### 2. Grace timer → TRIP
+When ALARM is triggered, a grace timer starts (`alarmGracePeriodMs`). If the operator does not
+resolve the alarm and readings remain anomalous, the timer expires and the system executes a
+forced trip: `alarm` → `shutting_down` + MQTT restart command + `motor_trip` alert.
+
+### 3. Critical reading → IMMEDIATE TRIP
+A single reading in the critical zone (value > `critical_max`) triggers an immediate trip
+without waiting for the grace timer. The motor transitions directly from `healthy` or `alarm`
+to `shutting_down`.
+
+### 4. Counter reset on normal reading
+When a normal reading arrives, that sensor's consecutive counter resets to 0. If the motor is
+in `alarm` and ALL sensor counters are 0, the motor auto-recovers: `alarm` → `healthy`.
+
+### 5. Ring buffer reset on restart
+Upon entering `restarting`, all consecutive counters of ALL sensors are cleared.
+Evaluation starts from zero when the motor resumes publishing telemetry.
+
+### 6. Auto-restart → disabled after recurrence
+If after auto-restart the motor trips again, it transitions to `disabled` instead of restarting
+a second time. Only 1 automatic attempt per episode; upon manual reactivation, the counter
+resets to zero.
+
+### 7. Operator resolves alarm
+The operator can manually resolve an ALARM (via API). This cancels the grace timer and
+transitions the motor back to `healthy`, resetting all sensor counters.
+
+### 8. Alert resolution
+If an operator marks an alert `resolved_at` but readings continue bad → a NEW alert is opened
+(never reuses the resolved one, so history reflects that the resolution didn't work).
+
+## Per-motor configuration
+
+The alarm parameters are stored in the `motors` table and hot-reloadable:
+
+| Field | Type | Default | Description |
+|---|---|---|---|
+| `alarmConsecutiveReadings` | INT | 5 | Number of consecutive anomalous readings to trigger ALARM |
+| `alarmGracePeriodMs` | INT | 120000 | Grace period in ms before automatic trip |
+
+These can be updated via `PATCH /config/motors/:id` and take effect immediately (hot-reload).
 
 ## Sensor transition rules — SEPARATE from motor rules
 1. Reading outside `plausible_min/max` → `fault: out_of_range`.

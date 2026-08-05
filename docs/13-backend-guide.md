@@ -40,11 +40,14 @@ The evaluation service implements two independent state machines:
 
 **Motor state machine** (see `docs/04-anomaly-state-machine.md`):
 - Evaluates readings from healthy sensors only (ignores sensors in fault).
-- Uses a sliding window of 8 readings (2 minutes) per sensor.
-- Warning zone (5/8 anomalous) → `under_review` → 2 min escalation → forced restart.
-- Critical zone (single reading > `critical_max`) → immediate `under_review`.
+- Uses per-sensor consecutive anomalous counters (not a sliding window).
+- N consecutive anomalous readings on one sensor (`alarmConsecutiveReadings`, configurable) → `alarm`.
+- Grace timer (`alarmGracePeriodMs`, configurable) → forced trip if not resolved.
+- Critical zone (single reading > `critical_max`) → immediate trip (no grace timer).
+- Auto-recovery: all counters reach 0 → `alarm` → `healthy`.
+- Operator can resolve alarm → cancel grace timer → `healthy`.
 - 1 automatic restart attempt per episode; if recurs → `disabled`.
-- Ring buffer resets on restart.
+- Counters reset on restart.
 
 **Sensor state machine** (independent per sensor):
 - `out_of_range`: reading outside `plausible_min/max`.
@@ -69,10 +72,11 @@ docker compose up backend-nestjs
 ## Key design decisions in this spec
 
 1. **Prisma as ORM** — migrations are declarative, TypeScript types auto-generated.
-2. **Sliding window in memory** — 8-boolean circular queue per motor_sensor_id, backed by DB on boot.
-3. **Write-through to Redis** — every reading updates the snapshot, no lazy loading.
-4. **Optimistic locking for alert resolution** — `WHERE resolved_at IS NULL`, 409 on conflict.
-5. **Backend MQTT reconnection** — `clean_session=false` + exponential backoff, QoS 1 redelivery.
+2. **Consecutive counter model** — per-sensor in-memory counter (backed by Redis for scaling), replaces sliding window.
+3. **Configurable alarm params** — `alarmConsecutiveReadings` and `alarmGracePeriodMs` stored per motor, hot-reloadable.
+4. **Write-through to Redis** — every reading updates the snapshot, no lazy loading.
+5. **Optimistic locking for alert resolution** — `WHERE resolved_at IS NULL`, 409 on conflict.
+6. **Backend MQTT reconnection** — `clean_session=false` + exponential backoff, QoS 1 redelivery.
 
 ## What this does NOT do (yet — handled by other specs)
 

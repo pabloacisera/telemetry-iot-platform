@@ -10,13 +10,17 @@
   - RAG endpoint query with: (a) healthy data available, (b) sensor in fault, (c) no recent data.
 - Suggested minimum coverage: 70% in `src/**/*.service.ts`.
 - Edge cases that MUST be covered by tests (not optional, surfaced from prior analysis):
-  - A single reading in the critical zone (> `critical_max`) triggers `under_review` without waiting for the full 8-reading window.
+  - N consecutive anomalous readings on a single sensor triggers `alarm` (configurable per motor).
+  - A single reading in the critical zone (> `critical_max`) triggers immediate trip (no grace timer).
+  - Grace timer expiry after ALARM triggers forced trip (`shutting_down`).
+  - Operator resolves ALARM → motor returns to `healthy`, grace timer cancelled.
+  - Auto-recovery: all sensor counters reach 0 while in `alarm` → motor returns to `healthy`.
+  - Normal reading resets the consecutive counter to 0.
+  - Post-restart recurrence: if after auto-restart it trips again → `disabled` (only 1 attempt).
+  - Ring buffer (consecutive counters) is reset upon entering `restarting`.
   - Alert marked as resolved but readings continue bad → a NEW alert is opened, not the old one reused.
   - Sensor "stuck": same value rounded to 1 decimal for 20 consecutive readings (5 minutes).
   - While the motor is `shutting_down`/`restarting`, no sensor should be evaluated as `fault`.
   - Device reconnection within the grace window (20s WiFi / 5s LAN) does NOT generate `sensor_fault`.
-  - Ring buffer is reset upon entering `restarting` — pre-restart readings do not contaminate post-restart evaluation.
-  - Post-restart recurrence: if after auto-restart it accumulates 5/8 again → `disabled` (only 1 attempt).
-  - 3 sensors in `fault`/`fault_persistent` simultaneously → motor to `under_review` with `sensor_failure_widespread`.
   - Concurrent alert resolution: two operators resolving the same → second receives 409.
   - Retention job idempotent: if it failed yesterday, today processes both days without losing data.

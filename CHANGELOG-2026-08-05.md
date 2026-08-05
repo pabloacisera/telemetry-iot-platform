@@ -94,3 +94,69 @@ después de persistir en la DB.
 
 - 68/68 tests del backend pasan
 - 23/23 tests del simulador pasan
+
+---
+
+## 3. Modelo de alarmas industriales (reemplaza ventana deslizante 5/8)
+
+### Problema
+
+El modelo anterior usaba una ventana deslizante de 8 lecturas con umbral 5/8 para determinar
+si un motor estaba anómalo. Este modelo tenía varias limitaciones:
+- No diferenciaba entre una anomalía sostenida y picos aislados.
+- El timer de escalación era fijo (2 min) y no configurable por motor.
+- No existía recuperación automática si las lecturas se normalizaban.
+- No había distinción entre "alarma" y "trip inmediato".
+
+### Causa raíz
+
+El modelo de ventana deslizante fue diseñado en la fase inicial del proyecto pero no
+escalaba bien a los requisitos industriales reales (alarmas configurables, gracia para
+intervención del operador, trip inmediato en zona crítica).
+
+### Solución
+
+Se reemplazó el modelo de ventana deslizante por un modelo de **lecturas consecutivas +
+grace timer + trip inmediato**:
+
+**Modelo nuevo:**
+- Cada sensor mantiene un contador de lecturas anómalas consecutivas (en memoria).
+- Cuando el contador alcanza `alarmConsecutiveReadings` (configurable por motor), el motor
+  entra en estado `alarm`.
+- Un grace timer (`alarmGracePeriodMs`, configurable) da tiempo al operador para intervenir.
+- Si el timer expira → trip forzado (restart MQTT).
+- Una lectura crítica (value > `critical_max`) → trip inmediato sin gracia.
+- Si todas las lecturas se normalizan → recuperación automática `alarm` → `healthy`.
+- El operador puede resolver la alarma manualmente → cancela el grace timer.
+
+**Archivos modificados:**
+- `backend/src/telemetry/motor-evaluation.service.ts` — Reescrito completamente:
+  - Contadores consecutivos por sensor (reemplaza ring buffer de 8)
+  - Grace timer configurable por motor (reemplaza escalación fija de 2 min)
+  - Trip inmediato en zona crítica (sin esperar ventana)
+  - Auto-recuperación cuando todos los contadores llegan a 0
+  - `setMotorParams()` para hot-reload de parámetros
+  - `resolveAlarm()` para resolución manual del operador
+- `backend/src/config-module/dto.ts` — Agregados `alarmConsecutiveReadings` y `alarmGracePeriodMs` a `UpdateMotorDto`
+- `backend/src/config-module/motor-config.service.ts` — `updateMotor()` ahora persiste y hot-reload parámetros de alarma
+- `backend/src/telemetry/telemetry-evaluation.service.ts` — Nuevo método `updateMotorParams()` para hot-reload
+- `backend/src/telemetry/motor-evaluation.service.spec.ts` — Reescrito completamente para el nuevo modelo
+
+### Configuración por motor
+
+| Campo | Tipo | Default | Descripción |
+|---|---|---|---|
+| `alarmConsecutiveReadings` | INT | 5 | Lecturas consecutivas anómalas para activar ALARMA |
+| `alarmGracePeriodMs` | INT | 120000 | Período de gracia en ms antes del trip automático |
+
+### Documentación actualizada
+
+- `docs/04-anomaly-state-machine.md` — Reescrito con nuevo modelo
+- `docs/13-backend-guide.md` — Sección de state machine actualizada
+- `kiro/steering/01-architecture.md` — Reglas de motor vs sensor actualizadas
+- `kiro/steering/05-testing.md` — Edge cases actualizados
+- `kiro/specs/02-backend-telemetry-core/` — Requirements, design y tasks actualizados
+
+### Tests
+
+- 73/73 tests del backend pasan (8 test suites)

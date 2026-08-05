@@ -57,6 +57,7 @@ export class TelemetryEvaluationService implements OnModuleInit {
     const motorStatuses = new Map<number, string>();
     const sensorStatuses = new Map<number, string>();
     const motorSensorIds = new Map<number, number[]>();
+    const motorParams = new Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }>();
 
     for (const sensor of sensors) {
       const range = this.plausibleRanges[sensor.sensorType] || {
@@ -80,11 +81,15 @@ export class TelemetryEvaluationService implements OnModuleInit {
       if (!motorSensorIds.has(sensor.motorId)) {
         motorSensorIds.set(sensor.motorId, []);
         motorStatuses.set(sensor.motorId, sensor.motor.status);
+        motorParams.set(sensor.motorId, {
+          alarmConsecutiveReadings: sensor.motor.alarmConsecutiveReadings,
+          alarmGracePeriodMs: sensor.motor.alarmGracePeriodMs,
+        });
       }
       motorSensorIds.get(sensor.motorId)!.push(sensor.id);
     }
 
-    await this.motorEval.init(motorStatuses, motorSensorIds);
+    await this.motorEval.init(motorStatuses, motorSensorIds, motorParams);
 
     // Build simplified sensor meta for SensorEvaluationService
     const sensorMetaSimple = new Map<
@@ -222,8 +227,14 @@ export class TelemetryEvaluationService implements OnModuleInit {
       sensorIds.push(sensor.id);
     }
 
-    // Register in motor evaluation
+    // Register in motor evaluation with protection params
     this.motorEval.registerMotor(motorId, sensorIds);
+    if (sensors.length > 0) {
+      this.motorEval.setMotorParams(motorId, {
+        alarmConsecutiveReadings: sensors[0].motor.alarmConsecutiveReadings,
+        alarmGracePeriodMs: sensors[0].motor.alarmGracePeriodMs,
+      });
+    }
 
     // Register in sensor evaluation
     for (const sensor of sensors) {
@@ -268,6 +279,19 @@ export class TelemetryEvaluationService implements OnModuleInit {
     this.logger.log(
       `Thresholds updated in-memory for sensor ${sensorId}: ` +
       `healthy<${meta.healthyMax} warning<${meta.warningMax} critical<${meta.criticalMax}`,
+    );
+  }
+
+  /**
+   * Update motor protection params in-memory (hot-reload on config change).
+   */
+  updateMotorParams(
+    motorId: number,
+    params: { alarmConsecutiveReadings: number; alarmGracePeriodMs: number },
+  ): void {
+    this.motorEval.setMotorParams(motorId, params);
+    this.logger.log(
+      `Motor ${motorId} params updated: consecutive=${params.alarmConsecutiveReadings}, grace=${params.alarmGracePeriodMs}ms`,
     );
   }
 }

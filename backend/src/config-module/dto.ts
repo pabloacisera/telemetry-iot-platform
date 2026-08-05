@@ -60,6 +60,16 @@ export class UpdateMotorDto {
   @IsString()
   @MaxLength(4)
   connectionType?: string;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  alarmConsecutiveReadings?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(5000)
+  alarmGracePeriodMs?: number;
 }
 
 /**

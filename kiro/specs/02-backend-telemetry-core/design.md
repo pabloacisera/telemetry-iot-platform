@@ -7,8 +7,9 @@
 ## Key services
 - `TelemetryConsumerService`: MQTT subscriber (`plant/motor/+/telemetry`, `plant/motor/+/status`), validates DTO,
   delegates to `TelemetryEvaluationService`.
-- `TelemetryEvaluationService`: complete state machine (motor and sensor), sliding window of 8 readings
-  per `motor_sensor_id` (maintained in memory + backed by `readings` query on boot).
+- `TelemetryEvaluationService`: orchestrates motor and sensor evaluation. Delegates to:
+  - `MotorEvaluationService`: industrial alarm/trip model with consecutive counters and grace timers.
+  - `SensorEvaluationService`: independent sensor fault detection (out_of_range, stuck, disconnected).
 - `TelemetryRepository`: persistence to `readings` (current day's partition).
 - `StatusTransitionService`: applies and audits status changes in `motors`/`motor_sensors` + history.
 
@@ -23,20 +24,40 @@ class TelemetryEventDto {
 }
 ```
 
-## Sliding window schema
-In-memory structure per `motor_sensor_id`: circular queue of 8 booleans (anomalous or not?). When a new
-reading arrives, it's pushed and the oldest is discarded; the count of `true` values decides the transition.
+## Motor evaluation: consecutive readings + grace timer
 
-### Evaluation zones per reading:
-- `value ≤ healthy_max` → healthy, does not count as anomalous.
-- `healthy_max < value ≤ warning_max` → precaution zone, does not count (operating margin).
-- `warning_max < value ≤ critical_max` → warning zone, counts as anomalous in the window.
-- `value > critical_max` → critical zone, immediate `under_review` trigger (no window wait).
+### Per-sensor consecutive counter
+Each `motor_sensor_id` has an in-memory counter (`consecutiveCounters`). When a reading falls in the
+warning zone (`warning_max` < value ≤ `critical_max`), the counter increments. When a normal reading
+arrives, the counter resets to 0.
 
-### Ring buffer reset:
-Upon entering `restarting`, the 8-reading window of ALL sensors of the motor is cleared.
-When publishing resumes, evaluation starts from zero.
+### Alarm trigger
+When a sensor's counter reaches `alarmConsecutiveReadings` (configurable per motor, default 5),
+the motor transitions from `healthy` → `alarm` and a `motor_alarm` alert is created.
 
-### Automatic restart counter:
-An `auto_restart_used` flag is maintained per motor. If it was already auto-restarted in this episode and
-recurs → `disabled`. Upon manual reactivation (`PATCH /motors/:id/reactivate`), the flag is cleared.
+### Grace timer
+On ALARM, a setTimeout-based grace timer starts (`alarmGracePeriodMs`, configurable, default 120s).
+If not cancelled by operator or auto-recovery, it triggers a forced trip.
+
+### Immediate trip
+A critical reading (value > `critical_max`) bypasses the counter and grace timer, triggering
+immediate `shutting_down` + MQTT restart command.
+
+### Auto-recovery
+When the motor is in `alarm` and ALL sensor counters reach 0 (readings normalized), the motor
+auto-recovers: `alarm` → `healthy`.
+
+### Configuration
+`alarmConsecutiveReadings` and `alarmGracePeriodMs` are stored in the `motors` table and
+hot-reloadable via `updateMotorParams()` without restarting the service.
+
+## Sensor evaluation (independent)
+- `out_of_range`: reading outside `plausible_min/max`.
+- `stuck`: same value (rounded 1 decimal) for 20 consecutive readings.
+- `disconnected`: no data within grace window (20s WiFi / 5s LAN).
+- Auto-restart in 5s; if recurs → `fault_persistent`.
+
+## Automatic restart counter
+An `auto_restart_used` flag is maintained per motor in Redis. If it was already auto-restarted in
+this episode and recurs → `disabled`. Upon manual reactivation (`PATCH /motors/:id/reactivate`),
+the flag is cleared.

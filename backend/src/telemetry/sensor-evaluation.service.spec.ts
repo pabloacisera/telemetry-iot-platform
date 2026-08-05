@@ -196,24 +196,6 @@ describe('SensorEvaluationService', () => {
     });
   });
 
-  describe('widespread failure', () => {
-    it('should transition motor to under_review when all 3 sensors fault', async () => {
-      await service.evaluateReading(1, 1, 200, 10, 150);
-      await service.evaluateReading(2, 1, 200, 10, 150);
-      await service.evaluateReading(3, 1, 200, 10, 150);
-
-      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        1,
-        'healthy',
-        'under_review',
-      );
-      expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        1,
-        'sensor_failure_widespread',
-      );
-    });
-  });
-
   describe('manual restart', () => {
     it('should restore sensor and clear auto-restart flag', async () => {
       // Put sensor in fault first

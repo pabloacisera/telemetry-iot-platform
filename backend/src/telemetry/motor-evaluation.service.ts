@@ -4,31 +4,46 @@ import { CommandService } from '../command/command.service';
 import { CacheService } from '../cache';
 
 /**
- * Motor health evaluation — sliding window + escalation logic.
+ * Motor health evaluation — industrial alarm/trip model.
  *
- * ARCHITECTURE: Redis is the source of truth for all evaluation state.
- * Multiple backend instances can evaluate concurrently without conflicts
- * thanks to Redis atomic operations and distributed locking per motor.
+ * DESIGN: Each sensor is evaluated independently. When a single sensor sustains
+ * anomalous readings (> warningMax) for N consecutive readings, the motor enters
+ * ALARM state. A grace timer gives the operator time to intervene. If nobody acts,
+ * the system trips (forced restart). A critical reading (> criticalMax) triggers
+ * immediate trip without waiting.
  *
- * Local Maps only hold static metadata (motor statuses, sensor mappings)
- * which are loaded from DB on boot and updated via event handlers.
+ * FLOW:
+ *   healthy → alarm (N consecutive anomalous on any sensor)
+ *   alarm   → trip  (grace timer expires without resolution)
+ *   alarm   → healthy (operator resolves OR readings normalize)
+ *   healthy → trip  (critical reading = immediate trip)
+ *   trip    → restarting (command sent to motor)
+ *   restarting → healthy (motor comes back online)
+ *   trip after previous trip → disabled (requires manual reactivation)
  *
- * Timers (escalation 2min) still use local setTimeout — on process restart,
- * they are restored from Redis expiry timestamps. For full multi-instance
- * timer coordination, see docs/23-scaling-guide.md (keyspace notifications).
+ * REDIS STATE:
+ *   state:consecutive:{motorSensorId}  → integer (consecutive anomalous count)
+ *   state:escalation:{motorId}         → expiry timestamp
+ *   state:auto_restart_used:{motorId}  → boolean
  */
 @Injectable()
 export class MotorEvaluationService {
   private readonly logger = new Logger(MotorEvaluationService.name);
 
-  /** Escalation timers: motor_id → timeout handle (local, restored from Redis on boot). */
-  private escalationTimers: Map<number, NodeJS.Timeout> = new Map();
+  /** Grace timers: motor_id → timeout handle (restored from Redis on boot). */
+  private graceTimers: Map<number, NodeJS.Timeout> = new Map();
 
-  /** Current motor statuses (in-memory cache, updated by event handlers). */
+  /** Current motor statuses (in-memory, synced with DB via transitions). */
   private motorStatuses: Map<number, string> = new Map();
 
-  /** Motor → sensor IDs mapping (static metadata from DB). */
+  /** Motor → sensor IDs mapping. */
   private motorSensorIds: Map<number, number[]> = new Map();
+
+  /** Motor → protection params. */
+  private motorParams: Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }> = new Map();
+
+  /** Per-sensor consecutive anomalous counter (in-memory, backed by Redis). */
+  private consecutiveCounters: Map<number, number> = new Map();
 
   constructor(
     private readonly statusTransition: StatusTransitionService,
@@ -36,68 +51,61 @@ export class MotorEvaluationService {
     private readonly cache: CacheService,
   ) {}
 
-  /** Initialize from DB metadata and restore active timers from Redis. */
+  // ═══════════════════════════════════════════════════════════════════
+  // INITIALIZATION
+  // ═══════════════════════════════════════════════════════════════════
+
   async init(
     motorStatuses: Map<number, string>,
     motorSensorIds: Map<number, number[]>,
+    motorParams?: Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }>,
   ): Promise<void> {
     this.motorStatuses = motorStatuses;
     this.motorSensorIds = motorSensorIds;
+    if (motorParams) this.motorParams = motorParams;
 
-    // Restore escalation timers from Redis
-    await this.restoreEscalationTimers();
+    await this.restoreGraceTimers();
   }
 
-  /** Restore and re-schedule escalation timers from Redis. */
-  private async restoreEscalationTimers(): Promise<void> {
+  private async restoreGraceTimers(): Promise<void> {
     try {
       const savedTimers = await this.cache.restoreEscalationTimers();
       for (const [motorId, expiresAt] of savedTimers) {
         const remaining = expiresAt - Date.now();
         if (remaining > 0) {
-          this.scheduleEscalation(motorId, remaining);
+          this.scheduleGraceExpiry(motorId, remaining);
         } else {
-          // Expired while down — execute now
-          this.checkEscalation(motorId).catch((err: unknown) => {
+          // Expired while backend was down — execute trip now
+          this.onGraceExpired(motorId).catch((err: unknown) => {
             this.logger.error(
-              `Restored escalation failed motor ${motorId}: ${(err as Error).message}`,
+              `Restored grace timer failed motor ${motorId}: ${(err as Error).message}`,
             );
           });
         }
       }
       if (savedTimers.size > 0) {
-        this.logger.log(
-          `Restored ${savedTimers.size} escalation timers from Redis`,
-        );
+        this.logger.log(`Restored ${savedTimers.size} grace timer(s) from Redis`);
       }
     } catch (err) {
       this.logger.warn(`Failed to restore timers: ${(err as Error).message}`);
     }
   }
 
-  /** Get current motor status from in-memory cache. */
+  // ═══════════════════════════════════════════════════════════════════
+  // PUBLIC API
+  // ═══════════════════════════════════════════════════════════════════
+
   getMotorStatus(motorId: number): string {
     return this.motorStatuses.get(motorId) || 'healthy';
   }
 
-  /** Update in-memory motor status. */
   setMotorStatus(motorId: number, status: string): void {
     this.motorStatuses.set(motorId, status);
   }
 
-  /** Reset sliding windows for all sensors of a motor (after restart). */
-  async resetWindow(motorId: number): Promise<void> {
-    const sensorIds = this.motorSensorIds.get(motorId) || [];
-    for (const id of sensorIds) {
-      await this.cache.clearWindow(id);
-    }
-    await this.cache.persistAutoRestartUsed(motorId, false);
-    this.clearEscalationTimer(motorId);
-  }
-
   /**
-   * Push a reading result and evaluate motor transitions.
-   * Uses distributed lock to prevent concurrent evaluation of the same motor.
+   * Main entry point — called for each non-implausible reading from a healthy sensor.
+   * Evaluates whether the motor should alarm or trip based on this individual sensor's behavior.
    */
   async pushReading(
     motorSensorId: number,
@@ -105,32 +113,38 @@ export class MotorEvaluationService {
     isAnomalous: boolean,
     isCritical: boolean,
   ): Promise<void> {
-    // Acquire lock (short TTL — just for this evaluation cycle)
     const locked = await this.cache.acquireMotorLock(motorId);
-    if (!locked) return; // Another instance is evaluating this motor right now
+    if (!locked) return;
 
     try {
-      // Push to sliding window in Redis (atomic, keeps max 8)
-      const window = await this.cache.pushToWindow(motorSensorId, isAnomalous);
       const motorStatus = this.motorStatuses.get(motorId);
 
-      if (isCritical && motorStatus === 'healthy') {
-        await this.triggerUnderReview(motorId);
+      // ── IMMEDIATE TRIP: critical reading on healthy/alarm motor ──
+      if (isCritical && (motorStatus === 'healthy' || motorStatus === 'alarm')) {
+        await this.triggerTrip(motorId, 'critical_reading');
         return;
       }
 
-      if (motorStatus === 'healthy') {
-        const anomalousCount = window.filter(Boolean).length;
-        if (anomalousCount >= 5) {
-          await this.triggerUnderReview(motorId);
-        }
-      }
+      // ── CONSECUTIVE COUNTER LOGIC ──
+      if (isAnomalous) {
+        const count = (this.consecutiveCounters.get(motorSensorId) || 0) + 1;
+        this.consecutiveCounters.set(motorSensorId, count);
 
-      // Auto-recovery: if under_review and ALL sensor windows are now below threshold → healthy
-      if (motorStatus === 'under_review') {
-        const recovered = await this.checkAllWindowsNormalized(motorId);
-        if (recovered) {
-          await this.recoverToHealthy(motorId);
+        const params = this.motorParams.get(motorId) || { alarmConsecutiveReadings: 5, alarmGracePeriodMs: 120000 };
+
+        if (motorStatus === 'healthy' && count >= params.alarmConsecutiveReadings) {
+          await this.triggerAlarm(motorId, motorSensorId, params.alarmGracePeriodMs);
+        }
+      } else {
+        // Normal reading → reset this sensor's counter
+        this.consecutiveCounters.set(motorSensorId, 0);
+
+        // If motor is in alarm, check if ALL sensors normalized → cancel alarm
+        if (motorStatus === 'alarm') {
+          const allNormalized = this.checkAllSensorsNormalized(motorId);
+          if (allNormalized) {
+            await this.recoverFromAlarm(motorId);
+          }
         }
       }
     } finally {
@@ -138,147 +152,25 @@ export class MotorEvaluationService {
     }
   }
 
-  /** Transition motor to under_review (internal observation, no alert yet). */
-  private async triggerUnderReview(motorId: number): Promise<void> {
-    const current = this.motorStatuses.get(motorId);
-    if (current !== 'healthy') return;
-
-    await this.statusTransition.transitionMotor(
-      motorId,
-      current,
-      'under_review',
-    );
-    this.motorStatuses.set(motorId, 'under_review');
-
-    // Start escalation timer — if still anomalous after 2 min, THEN alert + action
-    this.startEscalationTimer(motorId);
-  }
-
-  /** Start 2-minute escalation timer (persisted to Redis for restore). */
-  private startEscalationTimer(motorId: number): void {
-    this.clearEscalationTimer(motorId);
-
-    const durationMs = 2 * 60 * 1000;
-    const expiresAt = Date.now() + durationMs;
-
-    this.scheduleEscalation(motorId, durationMs);
-    this.cache.persistEscalationTimer(motorId, expiresAt).catch(() => {});
-  }
-
-  /** Schedule the escalation check with a given delay. */
-  private scheduleEscalation(motorId: number, delayMs: number): void {
-    const timer = setTimeout(() => {
-      this.escalationTimers.delete(motorId);
-      this.cache.clearEscalationTimer(motorId).catch(() => {});
-      this.checkEscalation(motorId).catch((err: unknown) => {
-        this.logger.error(
-          `Escalation check failed motor ${motorId}: ${(err as Error).message}`,
-        );
-      });
-    }, delayMs);
-
-    this.escalationTimers.set(motorId, timer);
-  }
-
-  /** Clear escalation timer (local + Redis). */
-  private clearEscalationTimer(motorId: number): void {
-    const existing = this.escalationTimers.get(motorId);
-    if (existing) {
-      clearTimeout(existing);
-      this.escalationTimers.delete(motorId);
-    }
-    this.cache.clearEscalationTimer(motorId).catch(() => {});
-  }
-
-  /**
-   * Check if motor should be alerted, force-restarted, or disabled.
-   * This runs after 2 minutes — if still anomalous, escalate with visible alert.
-   */
-  private async checkEscalation(motorId: number): Promise<void> {
-    if (this.motorStatuses.get(motorId) !== 'under_review') return;
-
-    // Check all sensor windows directly from Redis
-    const stillAnomalous = await this.isStillAnomalous(motorId);
-
-    // If normalized during the 2 min wait — recover silently
-    if (!stillAnomalous) {
-      await this.recoverToHealthy(motorId);
-      return;
-    }
-
-    // Still anomalous after 2 min → CREATE ALERT (now visible to operator)
-    await this.statusTransition.createAlert(motorId, 'warning');
-
-    const alreadyRestarted = await this.cache.getAutoRestartUsed(motorId);
-
-    if (alreadyRestarted) {
-      await this.statusTransition.transitionMotor(
-        motorId,
-        'under_review',
-        'disabled',
-      );
-      await this.statusTransition.createAlert(motorId, 'disabled');
-      this.motorStatuses.set(motorId, 'disabled');
-      return;
-    }
-
-    await this.statusTransition.transitionMotor(
-      motorId,
-      'under_review',
-      'shutting_down',
-    );
-    await this.statusTransition.createAlert(motorId, 'forced_restart');
-    this.motorStatuses.set(motorId, 'shutting_down');
-    await this.commandService.publishRestart(motorId, 'system');
-    await this.cache.persistAutoRestartUsed(motorId, true);
-  }
-
-  /** Check if any sensor window for this motor still has >=5/8 anomalous. */
-  private async isStillAnomalous(motorId: number): Promise<boolean> {
+  /** Reset all state for a motor (after restart completes). */
+  async resetWindow(motorId: number): Promise<void> {
     const sensorIds = this.motorSensorIds.get(motorId) || [];
     for (const id of sensorIds) {
-      const window = await this.cache.getWindow(id);
-      if (window.filter(Boolean).length >= 5) {
-        return true;
-      }
+      this.consecutiveCounters.set(id, 0);
+      await this.cache.clearWindow(id);
     }
-    return false;
+    await this.cache.persistAutoRestartUsed(motorId, false);
+    this.clearGraceTimer(motorId);
   }
 
-  /** Check if ALL sensor windows are below threshold (< 5/8). */
-  private async checkAllWindowsNormalized(motorId: number): Promise<boolean> {
-    const sensorIds = this.motorSensorIds.get(motorId) || [];
-    for (const id of sensorIds) {
-      const window = await this.cache.getWindow(id);
-      if (window.filter(Boolean).length >= 5) {
-        return false;
-      }
-    }
-    return true;
-  }
-
-  /** Recover motor from under_review to healthy (auto-recovery). */
-  private async recoverToHealthy(motorId: number): Promise<void> {
-    await this.statusTransition.transitionMotor(
-      motorId,
-      'under_review',
-      'healthy',
-    );
-    this.motorStatuses.set(motorId, 'healthy');
-    this.clearEscalationTimer(motorId);
-    this.logger.log(
-      `Motor ${motorId}: auto-recovered to healthy (readings normalized)`,
-    );
-  }
-
-  /** Called when motor enters restarting — clears windows in Redis. */
+  /** Called when motor enters restarting state. */
   onMotorRestarting(motorId: number): void {
     this.motorStatuses.set(motorId, 'restarting');
     const sensorIds = this.motorSensorIds.get(motorId) || [];
     for (const id of sensorIds) {
-      this.cache.clearWindow(id).catch(() => {});
+      this.consecutiveCounters.set(id, 0);
     }
-    this.clearEscalationTimer(motorId);
+    this.clearGraceTimer(motorId);
   }
 
   /** Called when motor returns to healthy after restart. */
@@ -286,26 +178,164 @@ export class MotorEvaluationService {
     this.motorStatuses.set(motorId, 'healthy');
   }
 
-  /** Called when admin/operator manually reactivates a disabled motor. */
+  /** Called when operator manually reactivates a disabled motor. */
   async onMotorReactivated(motorId: number): Promise<void> {
     this.motorStatuses.set(motorId, 'healthy');
     await this.cache.persistAutoRestartUsed(motorId, false);
     const sensorIds = this.motorSensorIds.get(motorId) || [];
     for (const id of sensorIds) {
+      this.consecutiveCounters.set(id, 0);
       await this.cache.clearWindow(id);
     }
   }
 
-  /** Register a new motor in evaluation maps (hot-reload). */
+  /** Operator resolves the alarm manually (cancels grace timer). */
+  async resolveAlarm(motorId: number): Promise<void> {
+    const status = this.motorStatuses.get(motorId);
+    if (status !== 'alarm') return;
+
+    await this.statusTransition.transitionMotor(motorId, 'alarm', 'healthy');
+    this.motorStatuses.set(motorId, 'healthy');
+    this.clearGraceTimer(motorId);
+
+    // Reset all consecutive counters
+    const sensorIds = this.motorSensorIds.get(motorId) || [];
+    for (const id of sensorIds) {
+      this.consecutiveCounters.set(id, 0);
+    }
+
+    this.logger.log(`Motor ${motorId}: alarm resolved by operator`);
+  }
+
+  /** Register a new motor (hot-reload). */
   registerMotor(motorId: number, sensorIds: number[]): void {
     this.motorStatuses.set(motorId, 'healthy');
     this.motorSensorIds.set(motorId, sensorIds);
   }
 
-  /** Unregister a motor from evaluation maps (hot-reload on delete). */
+  /** Register motor protection params (hot-reload). */
+  setMotorParams(motorId: number, params: { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }): void {
+    this.motorParams.set(motorId, params);
+  }
+
+  /** Unregister a motor (hot-reload on delete). */
   unregisterMotor(motorId: number): void {
     this.motorStatuses.delete(motorId);
     this.motorSensorIds.delete(motorId);
-    this.clearEscalationTimer(motorId);
+    this.motorParams.delete(motorId);
+    this.clearGraceTimer(motorId);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PRIVATE — ALARM & TRIP LOGIC
+  // ═══════════════════════════════════════════════════════════════════
+
+  /**
+   * Transition motor to ALARM state.
+   * Creates a visible alert and starts the grace timer.
+   */
+  private async triggerAlarm(motorId: number, triggerSensorId: number, gracePeriodMs: number): Promise<void> {
+    const current = this.motorStatuses.get(motorId);
+    if (current !== 'healthy') return;
+
+    await this.statusTransition.transitionMotor(motorId, current, 'alarm');
+    this.motorStatuses.set(motorId, 'alarm');
+
+    await this.statusTransition.createAlert(motorId, 'motor_alarm');
+
+    this.startGraceTimer(motorId, gracePeriodMs);
+
+    this.logger.warn(
+      `Motor ${motorId}: ALARM triggered (sensor ${triggerSensorId} sustained anomaly)`,
+    );
+  }
+
+  /**
+   * Transition motor to TRIP — forced restart.
+   * If already tripped before, DISABLE instead.
+   */
+  private async triggerTrip(motorId: number, reason: string): Promise<void> {
+    const current = this.motorStatuses.get(motorId);
+    this.clearGraceTimer(motorId);
+
+    const alreadyRestarted = await this.cache.getAutoRestartUsed(motorId);
+
+    if (alreadyRestarted) {
+      // Second failure → disable, do NOT restart again
+      await this.statusTransition.transitionMotor(motorId, current || 'alarm', 'disabled');
+      await this.statusTransition.createAlert(motorId, 'motor_disabled');
+      this.motorStatuses.set(motorId, 'disabled');
+      this.logger.error(`Motor ${motorId}: DISABLED (recurrence after auto-restart, reason: ${reason})`);
+      return;
+    }
+
+    // First trip → restart
+    await this.statusTransition.transitionMotor(motorId, current || 'healthy', 'shutting_down');
+    await this.statusTransition.createAlert(motorId, 'motor_trip');
+    this.motorStatuses.set(motorId, 'shutting_down');
+    await this.commandService.publishRestart(motorId, 'system');
+    await this.cache.persistAutoRestartUsed(motorId, true);
+
+    this.logger.warn(`Motor ${motorId}: TRIP executed (reason: ${reason})`);
+  }
+
+  /** Recover from alarm to healthy (readings normalized before grace expired). */
+  private async recoverFromAlarm(motorId: number): Promise<void> {
+    await this.statusTransition.transitionMotor(motorId, 'alarm', 'healthy');
+    this.motorStatuses.set(motorId, 'healthy');
+    this.clearGraceTimer(motorId);
+    this.logger.log(`Motor ${motorId}: alarm auto-cleared (all sensors normalized)`);
+  }
+
+  /** Check if all sensors of a motor have 0 consecutive anomalous readings. */
+  private checkAllSensorsNormalized(motorId: number): boolean {
+    const sensorIds = this.motorSensorIds.get(motorId) || [];
+    for (const id of sensorIds) {
+      if ((this.consecutiveCounters.get(id) || 0) > 0) return false;
+    }
+    return true;
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // PRIVATE — GRACE TIMER
+  // ═══════════════════════════════════════════════════════════════════
+
+  private startGraceTimer(motorId: number, durationMs: number): void {
+    this.clearGraceTimer(motorId);
+
+    const expiresAt = Date.now() + durationMs;
+    this.scheduleGraceExpiry(motorId, durationMs);
+    this.cache.persistEscalationTimer(motorId, expiresAt).catch(() => {});
+  }
+
+  private scheduleGraceExpiry(motorId: number, delayMs: number): void {
+    const timer = setTimeout(() => {
+      this.graceTimers.delete(motorId);
+      this.cache.clearEscalationTimer(motorId).catch(() => {});
+      this.onGraceExpired(motorId).catch((err: unknown) => {
+        this.logger.error(
+          `Grace expiry failed motor ${motorId}: ${(err as Error).message}`,
+        );
+      });
+    }, delayMs);
+
+    this.graceTimers.set(motorId, timer);
+  }
+
+  /** Grace timer expired — operator didn't intervene → TRIP. */
+  private async onGraceExpired(motorId: number): Promise<void> {
+    const status = this.motorStatuses.get(motorId);
+    if (status !== 'alarm') return;
+
+    await this.triggerTrip(motorId, 'grace_timer_expired');
+  }
+
+  private clearGraceTimer(motorId: number): void {
+    const existing = this.graceTimers.get(motorId);
+    if (existing) {
+      clearTimeout(existing);
+      this.graceTimers.delete(motorId);
+    }
+    this.cache.clearEscalationTimer(motorId).catch(() => {});
   }
 }

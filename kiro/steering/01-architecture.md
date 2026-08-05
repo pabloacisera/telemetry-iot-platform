@@ -18,12 +18,13 @@ Global and immutable rules. Any spec that contradicts them is incorrectly writte
 - Readings from a sensor in `fault`/`fault_persistent` state NEVER participate in motor health evaluation.
 - While `motor.status` is `shutting_down` or `restarting`, all fault evaluation of its sensors is paused
   (absence of data during intentional shutdown is not a disconnection).
-- Upon entering `restarting`, the ring buffer (8-reading window) of ALL its sensors is cleared.
+- Upon entering `restarting`, all consecutive anomalous counters of ALL its sensors are cleared.
   Evaluation starts from zero when telemetry resumes.
-- If all 3 sensors of a motor are in `fault`/`fault_persistent` simultaneously, the motor transitions to
-  `under_review` with alert type `sensor_failure_widespread`.
-- "Critical" zone = value > `critical_max` (explicit field in `motor_sensors` and `sensor_standards`).
-  A single critical reading triggers `under_review` without waiting for the full window.
+- Each sensor maintains an independent consecutive anomalous counter. When N consecutive readings
+  (`alarmConsecutiveReadings`, configurable per motor) are anomalous, the motor enters `alarm`.
+- A grace timer (`alarmGracePeriodMs`, configurable per motor) gives the operator time to intervene
+  before the system trips automatically.
+- A critical reading (value > `critical_max`) triggers an immediate trip without grace timer.
 - Automatic restart: 1 attempt only per episode. If it recurs → `disabled`. Upon manual reactivation,
   the counter resets to zero.
 

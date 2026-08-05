@@ -160,7 +160,7 @@ export class MotorConfigService {
       throw new NotFoundException(`Motor ${motorId} no encontrado`);
     }
 
-    return this.prisma.motor.update({
+    const updated = await this.prisma.motor.update({
       where: { id: motorId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
@@ -168,9 +168,25 @@ export class MotorConfigService {
         ...(dto.connectionType !== undefined && {
           connectionType: dto.connectionType,
         }),
+        ...(dto.alarmConsecutiveReadings !== undefined && {
+          alarmConsecutiveReadings: dto.alarmConsecutiveReadings,
+        }),
+        ...(dto.alarmGracePeriodMs !== undefined && {
+          alarmGracePeriodMs: dto.alarmGracePeriodMs,
+        }),
       },
       include: { sensors: true },
     });
+
+    // Hot-reload protection params in evaluation service
+    if (dto.alarmConsecutiveReadings !== undefined || dto.alarmGracePeriodMs !== undefined) {
+      this.telemetryEvaluation.updateMotorParams(motorId, {
+        alarmConsecutiveReadings: updated.alarmConsecutiveReadings,
+        alarmGracePeriodMs: updated.alarmGracePeriodMs,
+      });
+    }
+
+    return updated;
   }
 
   /**

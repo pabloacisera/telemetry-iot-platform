@@ -181,7 +181,6 @@ export class SensorEvaluationService {
     );
 
     this.scheduleAutoRestart(motorSensorId, motorId);
-    await this.checkWidespreadFailure(motorId);
   }
 
   /** Schedule automatic sensor restart after 5 seconds. */
@@ -222,29 +221,6 @@ export class SensorEvaluationService {
 
     // Reset stuck tracker in Redis
     await this.cache.persistStuckTracker(motorSensorId, NaN, 0);
-  }
-
-  /** If all 3 sensors of a motor are in fault → motor to under_review. */
-  private async checkWidespreadFailure(motorId: number): Promise<void> {
-    const sensorIds = this.motorSensorIds.get(motorId) || [];
-    if (sensorIds.length !== 3) return;
-
-    const allFaulted = sensorIds.every((id) => this.isInFault(id));
-    if (!allFaulted) return;
-
-    const motorStatus = this.motorEvaluation.getMotorStatus(motorId);
-    if (motorStatus !== 'healthy') return;
-
-    await this.statusTransition.transitionMotor(
-      motorId,
-      motorStatus,
-      'under_review',
-    );
-    await this.statusTransition.createAlert(
-      motorId,
-      'sensor_failure_widespread',
-    );
-    this.logger.warn(`Motor ${motorId}: all 3 sensors in fault → under_review`);
   }
 
   /** Register a new sensor in evaluation maps (hot-reload). */

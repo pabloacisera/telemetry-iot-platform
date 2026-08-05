@@ -24,6 +24,10 @@ model Motor {
   createdAt       DateTime     @default(now()) @map("created_at")
   deletedAt       DateTime?    @map("deleted_at")
 
+  // Protection parameters (configurable per motor from UI)
+  alarmConsecutiveReadings Int @default(5) @map("alarm_consecutive_readings")
+  alarmGracePeriodMs       Int @default(120000) @map("alarm_grace_period_ms")
+
   sensors       MotorSensor[]
   alerts        Alert[]
   statusHistory MotorStatusHistory[]
