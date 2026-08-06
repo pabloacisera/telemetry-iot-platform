@@ -5,11 +5,13 @@ import {
   Param,
   Body,
   Req,
+  Query,
   ParseIntPipe,
   UseGuards,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import { AlertsService } from './alerts.service';
+import { GetAlertHistoryDto } from './dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
@@ -29,6 +31,22 @@ export class AlertsController {
   @Get()
   async getActive() {
     return this.alertsService.getActive();
+  }
+
+  /**
+   * Get paginated alert history with optional filters.
+   * Accessible to all authenticated roles.
+   */
+  @Get('history')
+  async getHistory(@Query() query: GetAlertHistoryDto) {
+    return this.alertsService.getHistory({
+      page: query.page ?? 1,
+      limit: query.limit ?? 100,
+      motorId: query.motorId,
+      from: query.from ? new Date(query.from) : undefined,
+      to: query.to ? new Date(query.to) : undefined,
+      status: query.status ?? 'all',
+    });
   }
 
   /** Get alerts for a specific motor. Any authenticated user can view. */

@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { MotorDetailPage } from './pages/MotorDetailPage';
 import { ReferencePage } from './pages/ReferencePage';
 import { ConfigPage } from './pages/ConfigPage';
+import { AlertHistoryPage } from './pages/AlertHistoryPage';
 import { ProtectedRoute } from './components/routes/ProtectedRoute';
 
 /**
@@ -39,6 +40,7 @@ function App() {
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/motors/:id" element={<MotorDetailPage />} />
           <Route path="/referencia" element={<ReferencePage />} />
+          <Route path="/alertas" element={<AlertHistoryPage />} />
           <Route path="/config" element={<ConfigPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" />} />

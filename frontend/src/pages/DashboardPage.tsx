@@ -38,6 +38,9 @@ export function DashboardPage() {
           >
             <i className="fa-solid fa-chart-line" aria-hidden="true" /> Grafana
           </a>
+          <Link to="/alertas" className="ref-link">
+            <i className="fa-solid fa-bell" aria-hidden="true" /> Alertas
+          </Link>
           <Link to="/referencia" className="ref-link">
             <i className="fa-solid fa-book" aria-hidden="true" /> Referencia
           </Link>
