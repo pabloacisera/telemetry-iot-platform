@@ -56,7 +56,7 @@ describe('MotorEvaluationService', () => {
       pushToWindow: jest.fn().mockResolvedValue([]),
       getWindow: jest.fn().mockResolvedValue([]),
       clearWindow: jest.fn().mockResolvedValue(undefined),
-      getAutoRestartUsed: jest.fn().mockResolvedValue(false),
+      getAutoRestartUsed: jest.fn().mockResolvedValue(0),
       persistAutoRestartUsed: jest.fn().mockResolvedValue(undefined),
       persistEscalationTimer: jest.fn().mockResolvedValue(undefined),
       clearEscalationTimer: jest.fn().mockResolvedValue(undefined),
@@ -153,7 +153,7 @@ describe('MotorEvaluationService', () => {
     });
 
     it('should disable motor on critical reading if auto-restart already used', async () => {
-      cache.getAutoRestartUsed.mockResolvedValue(true);
+      cache.getAutoRestartUsed.mockResolvedValue(1);
 
       await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
 
@@ -203,7 +203,7 @@ describe('MotorEvaluationService', () => {
     });
 
     it('should disable motor if grace timer expires after previous auto-restart', async () => {
-      cache.getAutoRestartUsed.mockResolvedValue(true);
+      cache.getAutoRestartUsed.mockResolvedValue(1);
 
       for (let i = 0; i < PARAMS.alarmConsecutiveReadings; i++) {
         await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
@@ -296,7 +296,7 @@ describe('MotorEvaluationService', () => {
     it('should reset autoRestartUsed in Redis on resetWindow', async () => {
       await service.resetWindow(MOTOR_ID);
 
-      expect(cache.persistAutoRestartUsed).toHaveBeenCalledWith(MOTOR_ID, false);
+      expect(cache.persistAutoRestartUsed).toHaveBeenCalledWith(MOTOR_ID, 0);
     });
   });
 
@@ -382,7 +382,7 @@ describe('MotorEvaluationService', () => {
       await service.onMotorReactivated(MOTOR_ID);
 
       expect(service.getMotorStatus(MOTOR_ID)).toBe('healthy');
-      expect(cache.persistAutoRestartUsed).toHaveBeenCalledWith(MOTOR_ID, false);
+      expect(cache.persistAutoRestartUsed).toHaveBeenCalledWith(MOTOR_ID, 0);
     });
   });
 

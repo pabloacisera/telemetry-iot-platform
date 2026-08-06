@@ -27,6 +27,8 @@ model Motor {
   // Protection parameters (configurable per motor from UI)
   alarmConsecutiveReadings Int @default(5) @map("alarm_consecutive_readings")
   alarmGracePeriodMs       Int @default(120000) @map("alarm_grace_period_ms")
+  postRestartCooldownMs    Int @default(60000) @map("post_restart_cooldown_ms")
+  maxAutoRestarts          Int @default(1) @map("max_auto_restarts")
 
   sensors       MotorSensor[]
   alerts        Alert[]

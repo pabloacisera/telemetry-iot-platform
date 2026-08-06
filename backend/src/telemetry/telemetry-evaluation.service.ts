@@ -57,7 +57,7 @@ export class TelemetryEvaluationService implements OnModuleInit {
     const motorStatuses = new Map<number, string>();
     const sensorStatuses = new Map<number, string>();
     const motorSensorIds = new Map<number, number[]>();
-    const motorParams = new Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }>();
+    const motorParams = new Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number }>();
 
     for (const sensor of sensors) {
       const range = this.plausibleRanges[sensor.sensorType] || {
@@ -84,6 +84,8 @@ export class TelemetryEvaluationService implements OnModuleInit {
         motorParams.set(sensor.motorId, {
           alarmConsecutiveReadings: sensor.motor.alarmConsecutiveReadings,
           alarmGracePeriodMs: sensor.motor.alarmGracePeriodMs,
+          postRestartCooldownMs: sensor.motor.postRestartCooldownMs,
+          maxAutoRestarts: sensor.motor.maxAutoRestarts,
         });
       }
       motorSensorIds.get(sensor.motorId)!.push(sensor.id);
@@ -287,11 +289,11 @@ export class TelemetryEvaluationService implements OnModuleInit {
    */
   updateMotorParams(
     motorId: number,
-    params: { alarmConsecutiveReadings: number; alarmGracePeriodMs: number },
+    params: { alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number },
   ): void {
     this.motorEval.setMotorParams(motorId, params);
     this.logger.log(
-      `Motor ${motorId} params updated: consecutive=${params.alarmConsecutiveReadings}, grace=${params.alarmGracePeriodMs}ms`,
+      `Motor ${motorId} params updated: consecutive=${params.alarmConsecutiveReadings}, grace=${params.alarmGracePeriodMs}ms, cooldown=${params.postRestartCooldownMs}ms, maxRestarts=${params.maxAutoRestarts}`,
     );
   }
 }

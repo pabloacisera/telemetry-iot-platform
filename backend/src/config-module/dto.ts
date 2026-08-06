@@ -4,6 +4,7 @@ import {
   IsNumber,
   MaxLength,
   Min,
+  Max,
   Matches,
 } from 'class-validator';
 
@@ -70,6 +71,17 @@ export class UpdateMotorDto {
   @IsNumber()
   @Min(5000)
   alarmGracePeriodMs?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(10000)
+  postRestartCooldownMs?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(10)
+  maxAutoRestarts?: number;
 }
 
 /**

@@ -42,16 +42,13 @@ export class MotorEvaluationService {
   private motorSensorIds: Map<number, number[]> = new Map();
 
   /** Motor → protection params. */
-  private motorParams: Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }> = new Map();
+  private motorParams: Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number }> = new Map();
 
   /** Per-sensor consecutive anomalous counter (in-memory, backed by Redis). */
   private consecutiveCounters: Map<number, number> = new Map();
 
   /** Timestamp of last restart per motor (for cooldown). */
   private lastRestartTime: Map<number, number> = new Map();
-
-  /** How long after a restart the motor needs double readings to alarm (60s). */
-  private static readonly POST_RESTART_COOLDOWN_MS = 60_000;
 
   constructor(
     private readonly statusTransition: StatusTransitionService,
@@ -66,7 +63,7 @@ export class MotorEvaluationService {
   async init(
     motorStatuses: Map<number, string>,
     motorSensorIds: Map<number, number[]>,
-    motorParams?: Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }>,
+    motorParams?: Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number }>,
   ): Promise<void> {
     this.motorStatuses = motorStatuses;
     this.motorSensorIds = motorSensorIds;
@@ -172,10 +169,12 @@ export class MotorEvaluationService {
       this.consecutiveCounters.set(id, 0);
       await this.cache.clearWindow(id);
     }
-    await this.cache.persistAutoRestartUsed(motorId, false);
+    await this.cache.persistAutoRestartUsed(motorId, 0);
     this.clearGraceTimer(motorId);
     this.lastRestartTime.set(motorId, Date.now());
-    this.logger.log(`Motor ${motorId}: window reset, cooldown started (${MotorEvaluationService.POST_RESTART_COOLDOWN_MS / 1000}s)`);
+    const params = this.motorParams.get(motorId);
+    const cooldownSec = (params?.postRestartCooldownMs ?? 60_000) / 1000;
+    this.logger.log(`Motor ${motorId}: window reset, cooldown started (${cooldownSec}s)`);
   }
 
   /** Called when motor enters restarting state. */
@@ -197,7 +196,7 @@ export class MotorEvaluationService {
   /** Called when operator manually reactivates a disabled motor. */
   async onMotorReactivated(motorId: number): Promise<void> {
     this.motorStatuses.set(motorId, 'healthy');
-    await this.cache.persistAutoRestartUsed(motorId, false);
+    await this.cache.persistAutoRestartUsed(motorId, 0);
     const sensorIds = this.motorSensorIds.get(motorId) || [];
     for (const id of sensorIds) {
       this.consecutiveCounters.set(id, 0);
@@ -231,7 +230,7 @@ export class MotorEvaluationService {
   }
 
   /** Register motor protection params (hot-reload). */
-  setMotorParams(motorId: number, params: { alarmConsecutiveReadings: number; alarmGracePeriodMs: number }): void {
+  setMotorParams(motorId: number, params: { alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number }): void {
     this.motorParams.set(motorId, params);
   }
 
@@ -287,10 +286,12 @@ export class MotorEvaluationService {
     const current = this.motorStatuses.get(motorId);
     this.clearGraceTimer(motorId);
 
-    const alreadyRestarted = await this.cache.getAutoRestartUsed(motorId);
+    const params = this.motorParams.get(motorId);
+    const maxRestarts = params?.maxAutoRestarts ?? 1;
+    const restartCount = await this.cache.getAutoRestartUsed(motorId);
 
-    if (alreadyRestarted) {
-      // Second failure → disable, do NOT restart again
+    if (restartCount >= maxRestarts) {
+      // Reached max restarts → disable, do NOT restart again
       const metadata = { reason, triggerSensorId, cause: 'recurrence_after_restart' };
       await this.statusTransition.transitionMotor(motorId, current || 'alarm', 'disabled');
       await this.statusTransition.createAlert(motorId, 'motor_disabled', metadata);
@@ -305,7 +306,7 @@ export class MotorEvaluationService {
     await this.statusTransition.createAlert(motorId, 'motor_trip', metadata);
     this.motorStatuses.set(motorId, 'shutting_down');
     await this.commandService.publishRestart(motorId, 'system');
-    await this.cache.persistAutoRestartUsed(motorId, true);
+    await this.cache.persistAutoRestartUsed(motorId, restartCount + 1);
 
     this.logger.warn(`Motor ${motorId}: TRIP executed (reason: ${reason})`);
   }
@@ -334,7 +335,9 @@ export class MotorEvaluationService {
   private isInCooldown(motorId: number): boolean {
     const lastRestart = this.lastRestartTime.get(motorId);
     if (!lastRestart) return false;
-    return Date.now() - lastRestart < MotorEvaluationService.POST_RESTART_COOLDOWN_MS;
+    const params = this.motorParams.get(motorId);
+    const cooldownMs = params?.postRestartCooldownMs ?? 60_000;
+    return Date.now() - lastRestart < cooldownMs;
   }
 
   // ═══════════════════════════════════════════════════════════════════

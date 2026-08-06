@@ -191,26 +191,27 @@ export class CacheService implements OnModuleDestroy {
     return result;
   }
 
-  /** Persist auto-restart-used flag for a motor. */
-  async persistAutoRestartUsed(motorId: number, used: boolean): Promise<void> {
+  /** Persist auto-restart count for a motor. */
+  async persistAutoRestartUsed(motorId: number, count: number): Promise<void> {
     const key = `state:auto_restart:${motorId}`;
-    if (used) {
-      await this.redis.set(key, '1', 'EX', 3600); // TTL 1h
+    if (count > 0) {
+      await this.redis.set(key, String(count), 'EX', 86400); // TTL 24h
     } else {
       await this.redis.del(key);
     }
   }
 
-  /** Restore auto-restart-used flags. Returns motorId → boolean. */
-  async restoreAutoRestartUsed(): Promise<Map<number, boolean>> {
+  /** Restore auto-restart counts. Returns motorId → count. */
+  async restoreAutoRestartUsed(): Promise<Map<number, number>> {
     const keys = await this.redis.keys('state:auto_restart:*');
-    const result = new Map<number, boolean>();
+    const result = new Map<number, number>();
     if (keys.length === 0) return result;
 
     for (const key of keys) {
       const idMatch = key.match(/state:auto_restart:(\d+)/);
       if (idMatch) {
-        result.set(parseInt(idMatch[1], 10), true);
+        const val = await this.redis.get(key);
+        result.set(parseInt(idMatch[1], 10), val ? parseInt(val, 10) : 0);
       }
     }
     return result;
@@ -343,10 +344,10 @@ export class CacheService implements OnModuleDestroy {
     await this.redis.del(`state:window:${motorSensorId}`);
   }
 
-  /** Get auto-restart-used flag for a motor (returns false if not set). */
-  async getAutoRestartUsed(motorId: number): Promise<boolean> {
+  /** Get auto-restart count for a motor (returns 0 if not set). */
+  async getAutoRestartUsed(motorId: number): Promise<number> {
     const val = await this.redis.get(`state:auto_restart:${motorId}`);
-    return val === '1';
+    return val ? parseInt(val, 10) : 0;
   }
 
   /** Get escalation timer expiry for a motor (null if no active timer). */

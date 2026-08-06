@@ -305,11 +305,12 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 }
 
 /* ─── Config Page ───────────────────────────────────────────────────────────── */
-.config-page { max-width: 1000px; margin: 0 auto; padding: 1.5rem; }
+.config-page { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
 .config-header {
-  display: flex; align-items: center; gap: 1rem; margin-bottom: 1.5rem;
+  display: flex; align-items: center; gap: 1rem; margin-bottom: 1.25rem;
 }
-.config-header h1 { flex: 1; font-size: 1.25rem; }
+.config-header h1 { flex: 1; font-size: 1.25rem; font-weight: 600; }
+.config-error { color: var(--red); font-size: 0.875rem; margin-bottom: 1rem; }
 .btn-create {
   padding: 0.5rem 1rem; background: var(--accent); color: #fff;
   border: none; border-radius: 6px; cursor: pointer; font-size: 0.875rem;
@@ -322,38 +323,124 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 }
 .btn-cancel:hover { background: var(--bg); }
 
-.config-motor-list { display: flex; flex-direction: column; gap: 0.75rem; }
+/* Tabs */
+.config-tabs {
+  display: flex; gap: 0; border-bottom: 2px solid var(--border); margin-bottom: 1.25rem;
+}
+.config-tab {
+  padding: 0.625rem 1.25rem; background: none; border: none; border-bottom: 2px solid transparent;
+  margin-bottom: -2px; cursor: pointer; font-size: 0.875rem; font-weight: 500;
+  color: var(--gray); display: inline-flex; align-items: center; gap: 0.5rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+.config-tab:hover { color: var(--text); }
+.config-tab--active { color: var(--accent); border-bottom-color: var(--accent); }
+
+/* Tab header */
+.config-tab-header {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem;
+}
+.config-tab-count { font-size: 0.8125rem; color: var(--gray); }
+
+/* Section description */
+.config-section-desc { font-size: 0.875rem; color: var(--gray); margin-bottom: 1.25rem; }
+
+/* Motor list */
+.config-motor-list { display: flex; flex-direction: column; gap: 0.5rem; }
 .config-motor-item {
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 8px; padding: 0.75rem 1rem;
-  display: grid; grid-template-columns: 1fr auto; grid-template-rows: auto auto;
-  gap: 0.5rem; align-items: center;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
-.config-motor-info {
+.config-motor-item:hover { border-color: rgba(255,255,255,0.1); }
+.config-motor-item--attention { border-left: 3px solid var(--yellow); }
+.config-motor-row {
   display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem;
 }
-.config-motor-location { color: var(--gray); }
+.config-motor-code { min-width: 4.5rem; }
+.config-motor-name { flex: 1; color: var(--text); }
+.config-motor-location { color: var(--gray); font-size: 0.8125rem; }
 .config-motor-conn {
   background: var(--bg); padding: 0.125rem 0.5rem; border-radius: 4px;
-  font-size: 0.75rem; font-weight: 500;
+  font-size: 0.75rem; font-weight: 500; text-transform: uppercase;
 }
-.config-motor-actions { display: flex; gap: 0.5rem; }
+.config-motor-actions { display: flex; gap: 0.375rem; margin-left: auto; }
 .btn-icon {
   background: none; border: 1px solid var(--border); border-radius: 6px;
-  padding: 0.375rem 0.5rem; cursor: pointer; color: var(--text); font-size: 0.875rem;
+  padding: 0.375rem 0.5rem; cursor: pointer; color: var(--text); font-size: 0.8125rem;
+  transition: background 0.15s, color 0.15s;
 }
 .btn-icon:hover { background: var(--bg); }
 .btn-icon--danger:hover { color: var(--red); border-color: var(--red); background: rgba(239,68,68,0.05); }
 
 .config-sensors {
-  grid-column: 1 / -1;
-  display: flex; gap: 0.5rem; flex-wrap: wrap;
+  display: flex; gap: 0.375rem; flex-wrap: wrap; margin-top: 0.5rem;
 }
 .config-sensor-chip {
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
   padding: 0.25rem 0.5rem; font-size: 0.75rem; cursor: pointer; color: var(--text);
+  transition: border-color 0.15s, color 0.15s;
 }
 .config-sensor-chip:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Sensors tab */
+.config-sensor-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;
+}
+.config-sensor-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1rem;
+}
+.config-sensor-card-header {
+  display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem;
+}
+.config-sensor-card-header i { color: var(--accent); font-size: 1.125rem; }
+.config-sensor-card-header h3 { font-size: 0.9375rem; margin: 0; }
+.config-sensor-card-body { margin-bottom: 0.75rem; }
+.config-sensor-threshold-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 0.375rem 0; font-size: 0.8125rem;
+  border-bottom: 1px solid var(--border);
+}
+.config-sensor-threshold-row:last-child { border-bottom: none; }
+.config-sensor-label { color: var(--gray); }
+.config-sensor-value { font-weight: 600; font-family: 'Courier New', monospace; }
+.config-sensor-value--green { color: var(--green); }
+.config-sensor-value--yellow { color: var(--yellow); }
+.config-sensor-value--red { color: var(--red); }
+.config-sensor-standard-ref {
+  font-size: 0.75rem; color: var(--gray); margin-top: 0.5rem;
+  display: flex; align-items: center; gap: 0.375rem;
+}
+.config-sensor-card-motors {
+  display: flex; justify-content: space-between; align-items: center;
+  padding-top: 0.5rem; border-top: 1px solid var(--border); font-size: 0.75rem; color: var(--gray);
+}
+
+/* Alerts tab */
+.config-alerts-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.config-alerts-item {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem;
+}
+.config-alerts-item-header {
+  display: flex; align-items: center; gap: 0.75rem; font-size: 0.875rem; margin-bottom: 0.5rem;
+}
+.config-alerts-item-header span { color: var(--gray); flex: 1; }
+.config-alerts-item-header .btn-icon { margin-left: auto; }
+.config-alerts-params {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 0.5rem;
+}
+.config-alerts-param {
+  display: flex; flex-direction: column; gap: 0.125rem;
+  background: var(--bg); padding: 0.5rem 0.75rem; border-radius: 6px;
+}
+.config-alerts-param-label { font-size: 0.75rem; color: var(--gray); }
+.config-alerts-param-value { font-size: 0.9375rem; font-weight: 600; font-family: 'Courier New', monospace; }
+
+/* Skeleton loaders */
+.config-skeleton-header { height: 2rem; width: 200px; background: var(--bg); border-radius: 6px; margin-bottom: 1.25rem; animation: skeleton-shimmer 1.5s infinite; }
+.config-skeleton-tabs { height: 2.5rem; background: var(--bg); border-radius: 6px; margin-bottom: 1.25rem; animation: skeleton-shimmer 1.5s infinite; }
+.config-skeleton-list { display: flex; flex-direction: column; gap: 0.5rem; }
+.config-skeleton-card { height: 5rem; background: var(--bg); border-radius: 8px; animation: skeleton-shimmer 1.5s infinite; }
 
 /* Config forms */
 .config-form {
@@ -374,6 +461,7 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
   font-size: 0.875rem; background: var(--bg); color: var(--text);
 }
 .config-form-actions { display: flex; gap: 0.75rem; }
+.config-field-hint { font-size: 0.75rem; color: var(--gray); font-weight: 400; margin-top: 0.125rem; }
 .config-threshold-help { font-size: 0.8125rem; color: var(--gray); margin-bottom: 0.75rem; }
 .config-threshold-standard {
   font-size: 0.8125rem; color: var(--accent); margin-bottom: 0.5rem;

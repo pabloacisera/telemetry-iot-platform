@@ -174,15 +174,29 @@ export class MotorConfigService {
         ...(dto.alarmGracePeriodMs !== undefined && {
           alarmGracePeriodMs: dto.alarmGracePeriodMs,
         }),
+        ...(dto.postRestartCooldownMs !== undefined && {
+          postRestartCooldownMs: dto.postRestartCooldownMs,
+        }),
+        ...(dto.maxAutoRestarts !== undefined && {
+          maxAutoRestarts: dto.maxAutoRestarts,
+        }),
       },
       include: { sensors: true },
     });
 
     // Hot-reload protection params in evaluation service
-    if (dto.alarmConsecutiveReadings !== undefined || dto.alarmGracePeriodMs !== undefined) {
+    const protectionChanged =
+      dto.alarmConsecutiveReadings !== undefined ||
+      dto.alarmGracePeriodMs !== undefined ||
+      dto.postRestartCooldownMs !== undefined ||
+      dto.maxAutoRestarts !== undefined;
+
+    if (protectionChanged) {
       this.telemetryEvaluation.updateMotorParams(motorId, {
         alarmConsecutiveReadings: updated.alarmConsecutiveReadings,
         alarmGracePeriodMs: updated.alarmGracePeriodMs,
+        postRestartCooldownMs: updated.postRestartCooldownMs,
+        maxAutoRestarts: updated.maxAutoRestarts,
       });
     }
 

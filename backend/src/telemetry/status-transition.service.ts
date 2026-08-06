@@ -50,6 +50,13 @@ export class StatusTransitionService {
       changedAt: now.toISOString(),
       changedBy,
     });
+
+    // Sync sensor statuses to keep frontend consistent
+    if (toStatus === 'shutting_down' || toStatus === 'restarting' || toStatus === 'disabled') {
+      await this.transitionMotorSensors(motorId, 'fault');
+    } else if (toStatus === 'healthy') {
+      await this.transitionMotorSensors(motorId, 'ok');
+    }
   }
 
   /** Transition a sensor to a new status. */
@@ -71,6 +78,32 @@ export class StatusTransitionService {
       sensorStatus: toStatus,
       changedAt: now.toISOString(),
     });
+  }
+
+  /** Transition all sensors of a motor to a new status. */
+  async transitionMotorSensors(
+    motorId: number,
+    toStatus: string,
+  ): Promise<void> {
+    const sensors = await this.prisma.motorSensor.findMany({
+      where: { motorId, deletedAt: null },
+    });
+
+    const now = new Date();
+
+    for (const sensor of sensors) {
+      await this.prisma.motorSensor.update({
+        where: { id: sensor.id },
+        data: { status: toStatus, statusChangedAt: now },
+      });
+
+      this.realtime.emitStatusChange(motorId, {
+        motorSensorId: sensor.id,
+        motorId,
+        sensorStatus: toStatus,
+        changedAt: now.toISOString(),
+      });
+    }
   }
 
   /** Create a motor-level alert and emit it via WebSocket. */
