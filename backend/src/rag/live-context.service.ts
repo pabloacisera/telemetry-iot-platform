@@ -227,7 +227,7 @@ export class LiveContextService {
         }
 
         if (['fault', 'fault_persistent'].includes(s.status)) {
-          evaluation = '🔴 SENSOR EN FALLA (valor no confiable)';
+          evaluation += ' — ⚠️ SENSOR EN FALLA (dato real disponible pero no confiable)';
         }
 
         lines.push(`- ${name}: ${s.value.toFixed(1)} ${unit} — ${evaluation}`);

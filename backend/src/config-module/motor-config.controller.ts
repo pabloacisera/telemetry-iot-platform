@@ -10,15 +10,21 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { MotorConfigService } from './motor-config.service';
-import { CreateMotorDto, UpdateMotorDto, UpdateThresholdsDto } from './dto';
+import {
+  CreateMotorDto,
+  UpdateMotorDto,
+  UpdateThresholdsDto,
+  UpdateAlertConfigDto,
+  UpsertAlertOverrideDto,
+  UpdateSensorStandardDto,
+} from './dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../auth/roles.guard';
 import { Roles } from '../auth/roles.decorator';
 
 /**
  * Configuration endpoints — admin only.
- * Handles motor CRUD and sensor threshold management.
- * Creating a motor also provisions MQTT credentials in Mosquitto.
+ * Handles motor CRUD, sensor threshold management, and alert configuration.
  */
 @Controller('config')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -26,7 +32,7 @@ import { Roles } from '../auth/roles.decorator';
 export class MotorConfigController {
   constructor(private readonly configService: MotorConfigService) {}
 
-  /** List all motors with their sensors (for config page). */
+  /** List all motors with their sensors. */
   @Get('motors')
   async listMotors() {
     return this.configService.getAllMotors();
@@ -36,6 +42,15 @@ export class MotorConfigController {
   @Get('standards')
   async getStandards() {
     return this.configService.getSensorStandards();
+  }
+
+  /** Update global default thresholds for a sensor type. */
+  @Patch('standards/:id')
+  async updateStandard(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: UpdateSensorStandardDto,
+  ) {
+    return this.configService.updateSensorStandard(id, dto);
   }
 
   /** Create a new motor + provision MQTT credentials. */
@@ -67,5 +82,37 @@ export class MotorConfigController {
     @Body() dto: UpdateThresholdsDto,
   ) {
     return this.configService.updateThresholds(motorId, sensorId, dto);
+  }
+
+  // ── Alert Configuration ──────────────────────────────────────
+
+  /** Get global alert configuration. */
+  @Get('alerts')
+  async getAlertConfig() {
+    return this.configService.getAlertConfig();
+  }
+
+  /** Update global alert configuration. */
+  @Patch('alerts')
+  async updateAlertConfig(@Body() dto: UpdateAlertConfigDto) {
+    return this.configService.updateAlertConfig(dto);
+  }
+
+  /** List all per-motor alert overrides. */
+  @Get('alerts/overrides')
+  async listAlertOverrides() {
+    return this.configService.listAlertOverrides();
+  }
+
+  /** Create or update a per-motor alert override. */
+  @Post('alerts/overrides')
+  async upsertAlertOverride(@Body() dto: UpsertAlertOverrideDto) {
+    return this.configService.upsertAlertOverride(dto);
+  }
+
+  /** Delete a per-motor alert override (motor reverts to global config). */
+  @Delete('alerts/overrides/:motorId')
+  async deleteAlertOverride(@Param('motorId', ParseIntPipe) motorId: number) {
+    return this.configService.deleteAlertOverride(motorId);
   }
 }

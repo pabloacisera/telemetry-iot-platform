@@ -103,3 +103,75 @@ export class UpdateThresholdsDto {
   @Min(0)
   criticalMax?: number;
 }
+
+/**
+ * DTO for updating global alert configuration.
+ */
+export class UpdateAlertConfigDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  alarmConsecutiveReadings?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(5000)
+  alarmGracePeriodMs?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(10000)
+  postRestartCooldownMs?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(10)
+  maxAutoRestarts?: number;
+}
+
+/**
+ * DTO for updating a sensor standard (global default thresholds per sensor type).
+ * Validates ordering: healthyMax < warningMax < criticalMax enforced in service.
+ */
+export class UpdateSensorStandardDto {
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  defaultHealthyMax?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  defaultWarningMax?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  defaultCriticalMax?: number;
+}
+
+/**
+ * DTO for creating/updating a per-motor alert override.
+ */
+export class UpsertAlertOverrideDto {
+  @IsNumber()
+  motorId!: number;
+
+  @IsNumber()
+  @Min(1)
+  alarmConsecutiveReadings!: number;
+
+  @IsNumber()
+  @Min(5000)
+  alarmGracePeriodMs!: number;
+
+  @IsNumber()
+  @Min(10000)
+  postRestartCooldownMs!: number;
+
+  @IsNumber()
+  @Min(0)
+  @Max(10)
+  maxAutoRestarts!: number;
+}

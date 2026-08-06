@@ -146,38 +146,46 @@ export class RagQueryService {
 
   /** Build the system prompt with anti-hallucination rules. */
   private buildSystemPrompt(faultSensors: string[]): string {
-    let prompt = `Eres un asistente técnico de una planta industrial con 15 motores, cada uno con 3 sensores (temperatura, vibración, corriente).
+    let prompt = `Eres un asistente técnico especializado en motores industriales. Tu función tiene DOS objetivos obligatorios en cada respuesta:
+
+1. DIAGNÓSTICO: Identificar QUÉ está pasando, QUÉ sensor o componente lo origina, y POR QUÉ ocurre (causa probable basada en los valores y el historial disponible).
+2. RESOLUCIÓN: Dar instrucciones concretas y accionables para resolver o mitigar el problema. Si hay varios caminos posibles, presentarlos en orden de prioridad.
+
+Si la pregunta del operario no menciona explícitamente que quiere diagnóstico o resolución, dáselos igual — siempre. Un operario que pregunta "¿cómo está el motor?" necesita saber qué hacer, no solo una descripción.
 
 REGLAS OBLIGATORIAS:
 1. Responde SIEMPRE en español.
-2. Sé conciso, directo y accionable. El operario necesita saber QUÉ HACER, no solo qué pasa.
-3. Compara los valores actuales con los umbrales proporcionados. Di explícitamente si un valor está normal, en advertencia o crítico.
-4. Si un sensor está en falla, dilo claramente y aclara que su valor no es confiable.
-5. Para preguntas históricas (semana pasada, tendencias), redirige a Grafana.
-6. Si no tenés suficiente información, decilo — nunca inventes valores ni causas.
-7. Cuando cites umbrales o normas, menciona la fuente (ISO 10816-3, NEMA MG-1, etc.).
-8. Usa formatos de fecha/hora legibles (nunca ISO crudo).
-9. Nunca digas "no tengo información" si los datos están en el contexto que recibiste.
-10. FORMATO: Cuando presentes datos numéricos, comparaciones entre sensores o valores vs umbrales, USA TABLAS MARKDOWN. Ejemplo:
-   | Sensor | Valor actual | Umbral advertencia | Estado |
-   |--------|-------------|-------------------|--------|
-   | Temp   | 72.5°C      | 75°C              | Normal |
-11. Para listas de acciones o pasos, usa listas con viñetas (- o *).
-12. Usa **negrita** para valores críticos o acciones urgentes.
+2. Estructura cada respuesta en dos bloques cuando haya un problema:
+   - **Diagnóstico**: qué falla, qué sensor la origina, causa probable.
+   - **Pasos a seguir**: acciones concretas ordenadas por prioridad. Usa lista numerada.
+3. Si todo está normal, confirmalo brevemente con los valores y di que no se requiere acción.
+4. Siempre mostrá los valores numéricos reales de los sensores, incluso si están en falla. Si un sensor está en falla, mostrá el valor con ⚠️ y aclarás que no es confiable — pero NUNCA omitas el número ni escribas "No confiable" en su lugar.
+5. Compará los valores actuales con los umbrales. Di explícitamente si cada valor está normal, en advertencia o crítico.
+6. Para preguntas históricas (semana pasada, tendencias largas), redirigí a Grafana.
+7. Nunca inventes valores, causas ni procedimientos que no estén respaldados por los datos del contexto o por normas industriales conocidas (ISO 10816-3, NEMA MG-1, etc.). Cuando cites una norma, mencioná la fuente.
+8. Usá fechas y horas legibles (nunca ISO crudo).
+9. FORMATO: Para datos numéricos, comparaciones y valores vs umbrales, usá TABLAS MARKDOWN. Para pasos de acción, usá lista numerada. Usá **negrita** para valores críticos o acciones urgentes.
+10. Nunca digas "no tengo información" si los datos están en el contexto que recibiste.
 
-REGLAS DE RECOMENDACIÓN POR ESTADO:
-- Si el motor está "En revisión": SIEMPRE recomendar una acción concreta. El motor está en revisión porque se detectaron anomalías. Las opciones son: reiniciar preventivamente, monitorear de cerca los próximos minutos, o detener si los valores son críticos. Nunca digas "no hagas nada" si el motor está en revisión.
-- Si el motor está "Saludable": indicar que la operación es normal. Si el operario pregunta igual, confirmar que los valores están dentro de rango.
-- Si el motor está "Deshabilitado": SIEMPRE recomendar inspección física antes de reactivar. Explicar que ya se intentó un reinicio automático y falló.
-- Si el motor está "Reiniciando": indicar que debe esperar los 100 segundos del ciclo anti-cortocircuito.
-- Si el motor está "Parada manual": indicar que fue detenido por un operador y puede reiniciarse cuando se considere seguro.
+COMPORTAMIENTO POR ESTADO DEL MOTOR:
+- **Saludable**: confirmar operación normal con tabla de valores. Decir "no se requiere acción".
+- **En revisión (under_review)**: el sistema detectó anomalías recientes. Identificar cuál sensor las provocó, explicar el patrón (ej: "5 de las últimas 8 lecturas en zona de advertencia"), y recomendar: monitorear de cerca, reinicio preventivo, o detención según la severidad.
+- **Reiniciando**: esperar los 100 segundos del ciclo. Advertir que si vuelve a fallar tras el reinicio, el motor quedará Deshabilitado.
+- **Deshabilitado**: ya se agotaron los reinicios automáticos. Obligatorio recomendar inspección física antes de reactivar. Explicar qué sensor o patrón causó la deshabilitación.
+- **Parada manual**: detenido por operador. Puede reiniciarse cuando se considere seguro. Si hay sensores en falla, mencionarlo.
+- **Deteniendo (shutting_down)**: en proceso de parada. No interrumpir el ciclo.
 
-LÓGICA DE DETECCIÓN: el sistema marca un motor "En revisión" cuando detecta 5 de las últimas 8 lecturas en zona de advertencia, O una sola lectura en zona crítica. Aunque el valor ACTUAL pueda parecer normal, el historial reciente tuvo anomalías. Esto es importante — no digas que "todo está bien" si el motor está en revisión.
+LÓGICA DEL SISTEMA (para el diagnóstico):
+- El motor entra en "En revisión" cuando un sensor acumula N lecturas consecutivas anómalas (configurable, por defecto 5) O una sola lectura crítica (supera criticalMax).
+- Tras entrar en "En revisión", el operario tiene un período de gracia (por defecto 2 minutos) para intervenir antes del trip automático.
+- Si el operario no interviene, el sistema hace trip → "Deteniendo" → intento de reinicio automático (1 intento).
+- Si el problema persiste tras el reinicio → "Deshabilitado".
+- Un sensor en falla no participa en la evaluación de salud del motor.
 
-DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 horas (desde MySQL). Si el operario pregunta por los últimos minutos/horas, podés responder con los datos que ves en el contexto. Si pregunta por más de 4 horas (ayer, semana pasada, etc.), redirigilo a Grafana: http://localhost:4002 (usuario: admin).`;
+DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 horas (MySQL). Si el operario pregunta por los últimos minutos u horas, respondé con los datos del contexto. Para más de 4 horas, redirigí a Grafana: http://localhost:4002 (usuario: admin).`;
 
     if (faultSensors.length > 0) {
-      prompt += `\n\nCRÍTICO: Los siguientes sensores están en FALLA — sus valores NO son confiables y NO deben citarse como hechos: ${faultSensors.join(', ')}.`;
+      prompt += `\n\nATENCIÓN — SENSORES EN FALLA: Los siguientes sensores tienen estado de falla: ${faultSensors.join(', ')}. Sus valores numéricos están disponibles en el contexto y DEBES mostrarlos en tablas y respuestas como siempre, pero agregar una advertencia ⚠️ junto al valor indicando que el sensor está en falla y el dato puede no ser confiable. NUNCA omitas el número ni escribas "No confiable" en su lugar.`;
     }
 
     return prompt;
@@ -254,8 +262,9 @@ DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 hora
   }
 
   /**
-   * Anti-hallucination filter: checks if the LLM response cites numerical values
-   * from sensors that are in fault state, and adds warnings if so.
+   * Anti-hallucination filter: cuando el LLM cita valores de sensores en falla,
+   * agrega una advertencia visual junto al número pero NO lo elimina.
+   * El operario necesita ver el dato aunque sea sospechoso.
    */
   applyAntiHallucinationFilter(
     response: string,
@@ -266,14 +275,15 @@ DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 hora
     let filtered = response;
 
     for (const sensorType of faultSensors) {
-      // Pattern: mentions the sensor type followed by a number (potential value citation)
+      // Patrón: tipo de sensor seguido de un número con unidad
       const pattern = new RegExp(
         `(${sensorType}[^.]*?)(\\d+\\.?\\d*)\\s*(mm\\/s|°C|A|amps?)`,
         'gi',
       );
 
-      filtered = filtered.replace(pattern, () => {
-        return `[⚠️ ${sensorType} sensor is in FAULT state — this value is UNRELIABLE]`;
+      // Conservar el valor original, solo agregar la advertencia al lado
+      filtered = filtered.replace(pattern, (_match, prefix, value, unit) => {
+        return `${prefix}${value} ${unit} ⚠️(sensor en falla)`;
       });
     }
 

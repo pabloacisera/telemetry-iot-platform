@@ -8,7 +8,7 @@ import { MqttProvisioningService } from './mqtt-provisioning.service';
 import { CommandService } from '../command/command.service';
 import { TelemetryConsumerService } from '../telemetry/telemetry-consumer.service';
 import { TelemetryEvaluationService } from '../telemetry/telemetry-evaluation.service';
-import { CreateMotorDto, UpdateMotorDto, UpdateThresholdsDto } from './dto';
+import { CreateMotorDto, UpdateMotorDto, UpdateThresholdsDto, UpdateAlertConfigDto, UpsertAlertOverrideDto, UpdateSensorStandardDto } from './dto';
 
 /** Default sensor types created for every new motor — loaded from sensor_standards table. */
 const FALLBACK_SENSORS = [
@@ -305,5 +305,137 @@ export class MotorConfigService {
    */
   async getSensorStandards() {
     return this.prisma.sensorStandard.findMany();
+  }
+
+  /**
+   * Update the global default thresholds for a sensor type (sensor standard).
+   * These values are used as defaults when creating new motors and as reference
+   * in the Sensors config tab. Validates healthyMax < warningMax < criticalMax.
+   */
+  async updateSensorStandard(
+    standardId: number,
+    dto: { defaultHealthyMax?: number; defaultWarningMax?: number; defaultCriticalMax?: number },
+  ) {
+    const standard = await this.prisma.sensorStandard.findUnique({
+      where: { id: standardId },
+    });
+    if (!standard) {
+      throw new NotFoundException(`Sensor standard ${standardId} no encontrado`);
+    }
+
+    const newHealthy = dto.defaultHealthyMax ?? standard.defaultHealthyMax;
+    const newWarning = dto.defaultWarningMax ?? standard.defaultWarningMax;
+    const newCritical = dto.defaultCriticalMax ?? standard.defaultCriticalMax;
+
+    if (newHealthy >= newWarning || newWarning >= newCritical) {
+      throw new ConflictException(
+        `Los umbrales deben cumplir: defaultHealthyMax (${newHealthy}) < defaultWarningMax (${newWarning}) < defaultCriticalMax (${newCritical})`,
+      );
+    }
+
+    return this.prisma.sensorStandard.update({
+      where: { id: standardId },
+      data: {
+        ...(dto.defaultHealthyMax !== undefined && { defaultHealthyMax: dto.defaultHealthyMax }),
+        ...(dto.defaultWarningMax !== undefined && { defaultWarningMax: dto.defaultWarningMax }),
+        ...(dto.defaultCriticalMax !== undefined && { defaultCriticalMax: dto.defaultCriticalMax }),
+      },
+    });
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // ALERT CONFIGURATION (global + per-motor overrides)
+  // ═══════════════════════════════════════════════════════════════════
+
+  /** Get global alert configuration. */
+  async getAlertConfig(): Promise<{ alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number }> {
+    const row = await this.prisma.systemConfig.findUnique({ where: { key: 'alert_config' } });
+    if (!row) {
+      return {
+        alarmConsecutiveReadings: 5,
+        alarmGracePeriodMs: 120000,
+        postRestartCooldownMs: 60000,
+        maxAutoRestarts: 1,
+      };
+    }
+    const v = row.value as Record<string, number>;
+    return {
+      alarmConsecutiveReadings: v.alarmConsecutiveReadings ?? 5,
+      alarmGracePeriodMs: v.alarmGracePeriodMs ?? 120000,
+      postRestartCooldownMs: v.postRestartCooldownMs ?? 60000,
+      maxAutoRestarts: v.maxAutoRestarts ?? 1,
+    };
+  }
+
+  /** Update global alert configuration. */
+  async updateAlertConfig(dto: UpdateAlertConfigDto) {
+    const current = await this.getAlertConfig();
+    const updated = { ...current, ...dto };
+
+    await this.prisma.systemConfig.upsert({
+      where: { key: 'alert_config' },
+      create: { key: 'alert_config', value: updated },
+      update: { value: updated },
+    });
+
+    // Hot-reload: apply global config to all motors that don't have an override
+    await this.telemetryEvaluation.applyGlobalAlertConfig(updated);
+
+    return updated;
+  }
+
+  /** List all per-motor alert overrides. */
+  async listAlertOverrides() {
+    return this.prisma.motorAlertOverride.findMany({
+      include: { motor: { select: { id: true, code: true, name: true } } },
+    });
+  }
+
+  /** Create or update a per-motor alert override. */
+  async upsertAlertOverride(dto: UpsertAlertOverrideDto) {
+    const motor = await this.prisma.motor.findUnique({ where: { id: dto.motorId } });
+    if (!motor) throw new NotFoundException(`Motor ${dto.motorId} no encontrado`);
+
+    const override = await this.prisma.motorAlertOverride.upsert({
+      where: { motorId: dto.motorId },
+      create: {
+        motorId: dto.motorId,
+        alarmConsecutiveReadings: dto.alarmConsecutiveReadings,
+        alarmGracePeriodMs: dto.alarmGracePeriodMs,
+        postRestartCooldownMs: dto.postRestartCooldownMs,
+        maxAutoRestarts: dto.maxAutoRestarts,
+      },
+      update: {
+        alarmConsecutiveReadings: dto.alarmConsecutiveReadings,
+        alarmGracePeriodMs: dto.alarmGracePeriodMs,
+        postRestartCooldownMs: dto.postRestartCooldownMs,
+        maxAutoRestarts: dto.maxAutoRestarts,
+      },
+      include: { motor: { select: { id: true, code: true, name: true } } },
+    });
+
+    // Hot-reload: apply override to this specific motor
+    this.telemetryEvaluation.updateMotorParams(dto.motorId, {
+      alarmConsecutiveReadings: dto.alarmConsecutiveReadings,
+      alarmGracePeriodMs: dto.alarmGracePeriodMs,
+      postRestartCooldownMs: dto.postRestartCooldownMs,
+      maxAutoRestarts: dto.maxAutoRestarts,
+    });
+
+    return override;
+  }
+
+  /** Delete a per-motor alert override (motor reverts to global config). */
+  async deleteAlertOverride(motorId: number) {
+    const override = await this.prisma.motorAlertOverride.findUnique({ where: { motorId } });
+    if (!override) throw new NotFoundException(`Override for motor ${motorId} no encontrado`);
+
+    await this.prisma.motorAlertOverride.delete({ where: { motorId } });
+
+    // Hot-reload: revert motor to global config
+    const globalConfig = await this.getAlertConfig();
+    this.telemetryEvaluation.updateMotorParams(motorId, globalConfig);
+
+    return { deleted: true };
   }
 }

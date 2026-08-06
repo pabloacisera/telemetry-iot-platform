@@ -304,6 +304,125 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
   100% { stroke-dasharray: 80, 200; stroke-dashoffset: -125; }
 }
 
+/* ── Config Tab Wrapper (same visual as dashboard-grid-container) ── */
+.config-tab-wrapper {
+  background: var(--grid-bg, rgba(0,0,0,0.03));
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  max-height: calc(100vh - 220px);
+  overflow-y: auto;
+}
+@media (prefers-color-scheme: dark) {
+  .config-tab-wrapper { background: rgba(255,255,255,0.03); }
+}
+
+/* ── Section block (card dentro del wrapper) ── */
+.config-section-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem;
+}
+.config-section-block--action {
+  background: rgba(59,130,246,0.04);
+  border-color: rgba(59,130,246,0.2);
+}
+.config-section-block-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-heading);
+}
+.config-section-block-title i { color: var(--accent); }
+
+/* Custom rule row: título + botón en misma línea */
+.config-custom-rule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.config-custom-rule-row > div { flex: 1; }
+.config-custom-rule-row .config-section-desc { margin: 0; }
+.config-custom-rule-row .btn-create { flex-shrink: 0; }
+
+/* ── Motor collapsible row ── */
+.config-motor-row--collapsible {
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background 0.15s;
+}
+.config-motor-row--collapsible:hover { background: var(--bg); }
+.config-motor-row--collapsible:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.config-motor-chevron { color: var(--gray); font-size: 0.75rem; flex-shrink: 0; }
+
+/* ── Sensor standards grid (section 1 of sensors tab) ── */
+.config-standards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+.config-standard-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.config-standard-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.config-standard-card-header i { color: var(--accent); font-size: 1.125rem; flex-shrink: 0; }
+.config-standard-card-header strong { font-size: 0.9375rem; }
+.config-standard-unit {
+  font-size: 0.75rem;
+  color: var(--gray);
+  margin-left: 0.25rem;
+}
+.config-standard-ref-name {
+  font-size: 0.75rem;
+  color: var(--gray);
+  margin-left: auto;
+  text-align: right;
+}
+.config-standard-fields {
+  display: flex;
+  gap: 0.75rem;
+}
+.config-standard-error { margin: 0; font-size: 0.8125rem; }
+.config-standard-save { width: 100%; justify-content: center; }
+.btn-create--success {
+  background: var(--green) !important;
+}
+
+/* ── Sensor type cell in table ── */
+.config-sensor-type-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+}
+.config-sensor-type-cell i { color: var(--accent); width: 14px; text-align: center; }
+
+/* ── Reference column in table ── */
+.config-table-ref {
+  color: var(--gray);
+  font-size: 0.8125rem;
+  font-family: 'Courier New', monospace;
+}
+
 /* ─── Config Page ───────────────────────────────────────────────────────────── */
 .config-page { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
 .config-header {
@@ -513,3 +632,136 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
   font-size: 0.8125rem; cursor: pointer;
 }
 .btn-copy:hover, .btn-download:hover { background: var(--bg); border-color: var(--accent); color: var(--accent); }
+
+/* ── Alert Config: Global config ────────────────────────────────── */
+.config-alert-global {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; padding: 1.25rem; margin-bottom: 1.5rem;
+}
+.config-alert-global h3 {
+  font-size: 0.9375rem; font-weight: 600; margin-bottom: 1rem;
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.config-alert-global h3 i { color: var(--accent); }
+.config-alert-global-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem; margin-bottom: 1rem;
+}
+.config-alert-global-grid label {
+  font-size: 0.8125rem; font-weight: 500; color: var(--gray);
+  display: flex; flex-direction: column;
+}
+.config-alert-global-grid input {
+  margin-top: 0.25rem; padding: 0.5rem;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg); color: var(--text); font-size: 0.875rem;
+}
+
+/* ── Alert Config: Overrides table ──────────────────────────────── */
+.config-alert-overrides { margin-top: 0.5rem; }
+.config-alert-overrides .config-tab-header {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+}
+.config-alert-overrides .config-tab-header h3 {
+  font-size: 0.9375rem; font-weight: 600;
+  display: flex; align-items: center; gap: 0.5rem;
+}
+.config-alert-overrides .config-tab-header h3 i { color: var(--accent); }
+.config-section-hint { font-size: 0.8125rem; color: var(--gray); }
+.config-empty-state {
+  font-size: 0.875rem; color: var(--gray);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 1.5rem; text-align: center;
+}
+.config-alert-table {
+  width: 100%; border-collapse: collapse; font-size: 0.8125rem;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.config-alert-table th {
+  text-align: left; padding: 0.625rem 0.75rem;
+  background: var(--bg); border-bottom: 1px solid var(--border);
+  font-weight: 600; color: var(--gray); font-size: 0.75rem;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.config-alert-table td {
+  padding: 0.625rem 0.75rem; border-bottom: 1px solid var(--border);
+}
+.config-alert-table tr:last-child td { border-bottom: none; }
+.config-alert-table td strong { margin-right: 0.375rem; }
+.config-alert-table td span { color: var(--gray); font-size: 0.8125rem; }
+.config-table-actions { display: flex; gap: 0.25rem; }
+
+/* ── Alert Config: Pagination ───────────────────────────────────── */
+.config-pagination {
+  display: flex; align-items: center; justify-content: center;
+  gap: 0.75rem; margin-top: 0.75rem;
+}
+.config-pagination button {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--surface); color: var(--text);
+  cursor: pointer; font-size: 0.8125rem;
+}
+.config-pagination button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.config-pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+.config-pagination span { font-size: 0.8125rem; color: var(--gray); }
+
+/* ── Sensors Tab: Motor list with expand ────────────────────────── */
+.config-sensor-motor-list {
+  display: flex; flex-direction: column; gap: 0.25rem;
+}
+.config-sensor-motor-group {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; overflow: hidden;
+}
+.config-sensor-motor-header {
+  display: flex; align-items: center; gap: 0.625rem;
+  width: 100%; padding: 0.75rem 1rem;
+  background: none; border: none; cursor: pointer;
+  color: var(--text); font-size: 0.875rem; text-align: left;
+  border-bottom: 1px solid transparent;
+}
+.config-sensor-motor-header:hover { background: var(--bg); }
+.config-sensor-motor-header--open {
+  border-bottom-color: var(--border);
+}
+.config-sensor-motor-header i:first-child { color: var(--gray); font-size: 0.75rem; }
+.config-sensor-motor-header strong { margin-left: 0.25rem; }
+.config-sensor-motor-header span { color: var(--gray); }
+.config-sensor-motor-body {
+  padding: 0.75rem 1rem; display: flex; flex-direction: column; gap: 0.5rem;
+}
+.config-sensor-edit-row {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  padding: 0.5rem 0; border-bottom: 1px solid var(--border);
+}
+.config-sensor-edit-row:last-child { border-bottom: none; }
+.config-sensor-edit-type {
+  display: flex; align-items: center; gap: 0.5rem;
+  min-width: 140px; font-weight: 500; font-size: 0.875rem;
+}
+.config-sensor-edit-type i { color: var(--accent); width: 16px; text-align: center; }
+.config-sensor-edit-values {
+  display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;
+}
+.config-sensor-edit-field {
+  display: flex; flex-direction: column;
+}
+.config-sensor-edit-field label {
+  font-size: 0.6875rem; color: var(--gray); font-weight: 500;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.config-sensor-edit-field input {
+  width: 80px; padding: 0.375rem 0.5rem;
+  border: 1px solid var(--border); border-radius: 4px;
+  background: var(--bg); color: var(--text); font-size: 0.8125rem;
+  text-align: right;
+}
+.config-sensor-edit-field input:focus { border-color: var(--accent); outline: none; }
+.config-sensor-edit-values .config-sensor-standard-ref {
+  font-size: 0.75rem; color: var(--gray);
+  display: flex; align-items: center; gap: 0.25rem;
+}
+.config-sensor-edit-values .config-sensor-standard-ref i { font-size: 0.6875rem; }
+.config-sensor-edit-values .btn-icon { flex-shrink: 0; }
