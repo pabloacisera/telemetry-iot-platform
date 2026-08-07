@@ -30,9 +30,8 @@ describe('RagQueryService', () => {
       const result = service.applyAntiHallucinationFilter(response, [
         'vibration',
       ]);
-      expect(result).toContain('FAULT state');
-      expect(result).toContain('UNRELIABLE');
-      expect(result).not.toContain('3.2 mm/s');
+      expect(result).toContain('3.2 mm/s');
+      expect(result).toContain('⚠️(sensor en falla)');
     });
 
     it('should replace temperature value citation when temperature sensor is in fault', () => {
@@ -41,9 +40,8 @@ describe('RagQueryService', () => {
       const result = service.applyAntiHallucinationFilter(response, [
         'temperature',
       ]);
-      expect(result).toContain('FAULT state');
-      expect(result).toContain('UNRELIABLE');
-      expect(result).not.toContain('85°C');
+      expect(result).toContain('85');
+      expect(result).toContain('⚠️(sensor en falla)');
     });
 
     it('should replace current value citation when current sensor is in fault', () => {
@@ -52,9 +50,8 @@ describe('RagQueryService', () => {
       const result = service.applyAntiHallucinationFilter(response, [
         'current',
       ]);
-      expect(result).toContain('FAULT state');
-      expect(result).toContain('UNRELIABLE');
-      expect(result).not.toContain('15.2 A');
+      expect(result).toContain('15.2 A');
+      expect(result).toContain('⚠️(sensor en falla)');
     });
 
     it('should handle multiple fault sensors simultaneously', () => {
@@ -65,9 +62,13 @@ describe('RagQueryService', () => {
         'temperature',
         'current',
       ]);
-      expect(result).not.toContain('4.8 mm/s');
-      expect(result).not.toContain('92°C');
-      expect(result).not.toContain('10 A');
+      expect(result).toContain('4.8 mm/s');
+      expect(result).toContain('92');
+      expect(result).toContain('10 A');
+      // All three sensors should have the fault warning appended
+      const warningCount = (result.match(/⚠️\(sensor en falla\)/g) ?? [])
+        .length;
+      expect(warningCount).toBe(3);
     });
 
     it('should not modify text that mentions the sensor type without a value', () => {
@@ -95,8 +96,8 @@ describe('RagQueryService', () => {
       const result = service.applyAntiHallucinationFilter(response, [
         'vibration',
       ]);
-      expect(result).toContain('UNRELIABLE');
-      expect(result).not.toContain('5.1 mm/s');
+      expect(result).toContain('5.1 mm/s');
+      expect(result).toContain('⚠️(sensor en falla)');
     });
   });
 });

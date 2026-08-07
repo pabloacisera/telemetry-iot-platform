@@ -33,6 +33,7 @@ model Motor {
   sensors       MotorSensor[]
   alerts        Alert[]
   statusHistory MotorStatusHistory[]
+  alertOverride MotorAlertOverride?
 
   @@map("motors")
 }
@@ -167,6 +168,35 @@ model MotorStatusHistory {
   motor Motor @relation(fields: [motorId], references: [id])
 
   @@map("motor_status_history")
+}
+
+// ============================================================
+// System Config (global settings)
+// ============================================================
+
+model SystemConfig {
+  id    Int    @id @default(autoincrement())
+  key   String @unique @db.VarChar(50)
+  value Json   @db.Json
+
+  @@map("system_config")
+}
+
+// ============================================================
+// Motor Alert Overrides (per-motor overrides of global alert config)
+// ============================================================
+
+model MotorAlertOverride {
+  id                       Int  @id @default(autoincrement())
+  motorId                  Int  @unique @map("motor_id")
+  alarmConsecutiveReadings Int  @map("alarm_consecutive_readings")
+  alarmGracePeriodMs       Int  @map("alarm_grace_period_ms")
+  postRestartCooldownMs    Int  @map("post_restart_cooldown_ms")
+  maxAutoRestarts          Int  @map("max_auto_restarts")
+
+  motor Motor @relation(fields: [motorId], references: [id])
+
+  @@map("motor_alert_overrides")
 }
 
 // ============================================================

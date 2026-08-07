@@ -93,7 +93,11 @@ export class AlertsService {
     ]);
 
     // Resolve user info separately (avoid exposing password hash via relation)
-    const userIds = [...new Set(data.map((a) => a.resolvedBy).filter((id): id is number => id !== null))];
+    const userIds = [
+      ...new Set(
+        data.map((a) => a.resolvedBy).filter((id): id is number => id !== null),
+      ),
+    ];
     const users =
       userIds.length > 0
         ? await this.prisma.user.findMany({

@@ -8,7 +8,14 @@ import { MqttProvisioningService } from './mqtt-provisioning.service';
 import { CommandService } from '../command/command.service';
 import { TelemetryConsumerService } from '../telemetry/telemetry-consumer.service';
 import { TelemetryEvaluationService } from '../telemetry/telemetry-evaluation.service';
-import { CreateMotorDto, UpdateMotorDto, UpdateThresholdsDto, UpdateAlertConfigDto, UpsertAlertOverrideDto, UpdateSensorStandardDto } from './dto';
+import {
+  CreateMotorDto,
+  UpdateMotorDto,
+  UpdateThresholdsDto,
+  UpdateAlertConfigDto,
+  UpsertAlertOverrideDto,
+  UpdateSensorStandardDto,
+} from './dto';
 
 /** Default sensor types created for every new motor — loaded from sensor_standards table. */
 const FALLBACK_SENSORS = [
@@ -312,15 +319,14 @@ export class MotorConfigService {
    * These values are used as defaults when creating new motors and as reference
    * in the Sensors config tab. Validates healthyMax < warningMax < criticalMax.
    */
-  async updateSensorStandard(
-    standardId: number,
-    dto: { defaultHealthyMax?: number; defaultWarningMax?: number; defaultCriticalMax?: number },
-  ) {
+  async updateSensorStandard(standardId: number, dto: UpdateSensorStandardDto) {
     const standard = await this.prisma.sensorStandard.findUnique({
       where: { id: standardId },
     });
     if (!standard) {
-      throw new NotFoundException(`Sensor standard ${standardId} no encontrado`);
+      throw new NotFoundException(
+        `Sensor standard ${standardId} no encontrado`,
+      );
     }
 
     const newHealthy = dto.defaultHealthyMax ?? standard.defaultHealthyMax;
@@ -336,9 +342,15 @@ export class MotorConfigService {
     return this.prisma.sensorStandard.update({
       where: { id: standardId },
       data: {
-        ...(dto.defaultHealthyMax !== undefined && { defaultHealthyMax: dto.defaultHealthyMax }),
-        ...(dto.defaultWarningMax !== undefined && { defaultWarningMax: dto.defaultWarningMax }),
-        ...(dto.defaultCriticalMax !== undefined && { defaultCriticalMax: dto.defaultCriticalMax }),
+        ...(dto.defaultHealthyMax !== undefined && {
+          defaultHealthyMax: dto.defaultHealthyMax,
+        }),
+        ...(dto.defaultWarningMax !== undefined && {
+          defaultWarningMax: dto.defaultWarningMax,
+        }),
+        ...(dto.defaultCriticalMax !== undefined && {
+          defaultCriticalMax: dto.defaultCriticalMax,
+        }),
       },
     });
   }
@@ -348,8 +360,15 @@ export class MotorConfigService {
   // ═══════════════════════════════════════════════════════════════════
 
   /** Get global alert configuration. */
-  async getAlertConfig(): Promise<{ alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number }> {
-    const row = await this.prisma.systemConfig.findUnique({ where: { key: 'alert_config' } });
+  async getAlertConfig(): Promise<{
+    alarmConsecutiveReadings: number;
+    alarmGracePeriodMs: number;
+    postRestartCooldownMs: number;
+    maxAutoRestarts: number;
+  }> {
+    const row = await this.prisma.systemConfig.findUnique({
+      where: { key: 'alert_config' },
+    });
     if (!row) {
       return {
         alarmConsecutiveReadings: 5,
@@ -393,8 +412,11 @@ export class MotorConfigService {
 
   /** Create or update a per-motor alert override. */
   async upsertAlertOverride(dto: UpsertAlertOverrideDto) {
-    const motor = await this.prisma.motor.findUnique({ where: { id: dto.motorId } });
-    if (!motor) throw new NotFoundException(`Motor ${dto.motorId} no encontrado`);
+    const motor = await this.prisma.motor.findUnique({
+      where: { id: dto.motorId },
+    });
+    if (!motor)
+      throw new NotFoundException(`Motor ${dto.motorId} no encontrado`);
 
     const override = await this.prisma.motorAlertOverride.upsert({
       where: { motorId: dto.motorId },
@@ -427,8 +449,13 @@ export class MotorConfigService {
 
   /** Delete a per-motor alert override (motor reverts to global config). */
   async deleteAlertOverride(motorId: number) {
-    const override = await this.prisma.motorAlertOverride.findUnique({ where: { motorId } });
-    if (!override) throw new NotFoundException(`Override for motor ${motorId} no encontrado`);
+    const override = await this.prisma.motorAlertOverride.findUnique({
+      where: { motorId },
+    });
+    if (!override)
+      throw new NotFoundException(
+        `Override for motor ${motorId} no encontrado`,
+      );
 
     await this.prisma.motorAlertOverride.delete({ where: { motorId } });
 

@@ -52,7 +52,11 @@ export class StatusTransitionService {
     });
 
     // Sync sensor statuses to keep frontend consistent
-    if (toStatus === 'shutting_down' || toStatus === 'restarting' || toStatus === 'disabled') {
+    if (
+      toStatus === 'shutting_down' ||
+      toStatus === 'restarting' ||
+      toStatus === 'disabled'
+    ) {
       await this.transitionMotorSensors(motorId, 'fault');
     } else if (toStatus === 'healthy') {
       await this.transitionMotorSensors(motorId, 'ok');
@@ -107,7 +111,11 @@ export class StatusTransitionService {
   }
 
   /** Create a motor-level alert and emit it via WebSocket. */
-  async createAlert(motorId: number, type: string, metadata?: Record<string, unknown>): Promise<void> {
+  async createAlert(
+    motorId: number,
+    type: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<void> {
     const jsonMeta = metadata ? (metadata as Prisma.InputJsonValue) : undefined;
     const alert = await this.prisma.alert.create({
       data: { motorId, type, metadata: jsonMeta, triggeredAt: new Date() },

@@ -106,4 +106,12 @@ export class TelemetryRepository implements OnModuleDestroy {
       include: { motor: true },
     });
   }
+
+  /** Get all motor IDs that have a per-motor alert override. */
+  async getMotorIdsWithOverrides(): Promise<number[]> {
+    const overrides = await this.prisma.motorAlertOverride.findMany({
+      select: { motorId: true },
+    });
+    return overrides.map((o) => o.motorId);
+  }
 }

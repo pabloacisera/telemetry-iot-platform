@@ -34,7 +34,12 @@ describe('MotorEvaluationService', () => {
   };
 
   // Default protection params: 3 consecutive readings, 500ms grace (for fast tests)
-  const PARAMS = { alarmConsecutiveReadings: 3, alarmGracePeriodMs: 500 };
+  const PARAMS = {
+    alarmConsecutiveReadings: 3,
+    alarmGracePeriodMs: 500,
+    postRestartCooldownMs: 60000,
+    maxAutoRestarts: 1,
+  };
   const MOTOR_ID = 1;
   const SENSOR_1 = 1;
   const SENSOR_2 = 2;
@@ -70,7 +75,9 @@ describe('MotorEvaluationService', () => {
     );
 
     const motorStatuses = new Map([[MOTOR_ID, 'healthy']]);
-    const motorSensorIds = new Map([[MOTOR_ID, [SENSOR_1, SENSOR_2, SENSOR_3]]]);
+    const motorSensorIds = new Map([
+      [MOTOR_ID, [SENSOR_1, SENSOR_2, SENSOR_3]],
+    ]);
     const motorParams = new Map([[MOTOR_ID, PARAMS]]);
 
     await service.init(motorStatuses, motorSensorIds, motorParams);
@@ -88,10 +95,14 @@ describe('MotorEvaluationService', () => {
       }
 
       expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'alarm',
+        MOTOR_ID,
+        'healthy',
+        'alarm',
       );
       expect(statusTransition.createAlert).not.toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_alarm', expect.anything(),
+        MOTOR_ID,
+        'motor_alarm',
+        expect.anything(),
       );
     });
 
@@ -101,11 +112,17 @@ describe('MotorEvaluationService', () => {
       }
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'alarm',
+        MOTOR_ID,
+        'healthy',
+        'alarm',
       );
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_alarm',
-        expect.objectContaining({ triggerSensorId: SENSOR_1, consecutiveReadings: PARAMS.alarmConsecutiveReadings }),
+        MOTOR_ID,
+        'motor_alarm',
+        expect.objectContaining({
+          triggerSensorId: SENSOR_1,
+          consecutiveReadings: PARAMS.alarmConsecutiveReadings,
+        }),
       );
     });
 
@@ -119,7 +136,9 @@ describe('MotorEvaluationService', () => {
       }
 
       expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'alarm',
+        MOTOR_ID,
+        'healthy',
+        'alarm',
       );
     });
 
@@ -143,13 +162,19 @@ describe('MotorEvaluationService', () => {
       await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'shutting_down',
+        MOTOR_ID,
+        'healthy',
+        'shutting_down',
       );
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_trip',
+        MOTOR_ID,
+        'motor_trip',
         expect.objectContaining({ reason: 'critical_reading' }),
       );
-      expect(commandService.publishRestart).toHaveBeenCalledWith(MOTOR_ID, 'system');
+      expect(commandService.publishRestart).toHaveBeenCalledWith(
+        MOTOR_ID,
+        'system',
+      );
     });
 
     it('should disable motor on critical reading if auto-restart already used', async () => {
@@ -158,10 +183,13 @@ describe('MotorEvaluationService', () => {
       await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'disabled',
+        MOTOR_ID,
+        'healthy',
+        'disabled',
       );
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_disabled',
+        MOTOR_ID,
+        'motor_disabled',
         expect.objectContaining({ reason: 'critical_reading' }),
       );
       expect(commandService.publishRestart).not.toHaveBeenCalled();
@@ -173,7 +201,9 @@ describe('MotorEvaluationService', () => {
       await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'alarm', 'shutting_down',
+        MOTOR_ID,
+        'alarm',
+        'shutting_down',
       );
     });
   });
@@ -186,20 +216,28 @@ describe('MotorEvaluationService', () => {
       }
 
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_alarm', expect.anything(),
+        MOTOR_ID,
+        'motor_alarm',
+        expect.anything(),
       );
 
       jest.advanceTimersByTime(PARAMS.alarmGracePeriodMs + 100);
       await flushPromises();
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'alarm', 'shutting_down',
+        MOTOR_ID,
+        'alarm',
+        'shutting_down',
       );
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_trip',
+        MOTOR_ID,
+        'motor_trip',
         expect.objectContaining({ reason: 'grace_timer_expired' }),
       );
-      expect(commandService.publishRestart).toHaveBeenCalledWith(MOTOR_ID, 'system');
+      expect(commandService.publishRestart).toHaveBeenCalledWith(
+        MOTOR_ID,
+        'system',
+      );
     });
 
     it('should disable motor if grace timer expires after previous auto-restart', async () => {
@@ -213,10 +251,13 @@ describe('MotorEvaluationService', () => {
       await flushPromises();
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'alarm', 'disabled',
+        MOTOR_ID,
+        'alarm',
+        'disabled',
       );
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_disabled',
+        MOTOR_ID,
+        'motor_disabled',
         expect.objectContaining({ reason: 'grace_timer_expired' }),
       );
       expect(commandService.publishRestart).not.toHaveBeenCalled();
@@ -236,7 +277,9 @@ describe('MotorEvaluationService', () => {
       await service.pushReading(SENSOR_3, MOTOR_ID, false, false);
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'alarm', 'healthy',
+        MOTOR_ID,
+        'alarm',
+        'healthy',
       );
     });
 
@@ -270,7 +313,9 @@ describe('MotorEvaluationService', () => {
       await service.resolveAlarm(MOTOR_ID);
 
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'alarm', 'healthy',
+        MOTOR_ID,
+        'alarm',
+        'healthy',
       );
 
       jest.advanceTimersByTime(PARAMS.alarmGracePeriodMs + 100);
@@ -311,7 +356,9 @@ describe('MotorEvaluationService', () => {
         await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
       expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'alarm',
+        MOTOR_ID,
+        'healthy',
+        'alarm',
       );
 
       // Push N more (total 2N) — should trigger alarm now
@@ -319,7 +366,9 @@ describe('MotorEvaluationService', () => {
         await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'alarm',
+        MOTOR_ID,
+        'healthy',
+        'alarm',
       );
     });
 
@@ -335,7 +384,9 @@ describe('MotorEvaluationService', () => {
         await service.pushReading(SENSOR_1, MOTOR_ID, true, false);
       }
       expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
-        MOTOR_ID, 'healthy', 'alarm',
+        MOTOR_ID,
+        'healthy',
+        'alarm',
       );
     });
   });
@@ -348,7 +399,8 @@ describe('MotorEvaluationService', () => {
       }
 
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_alarm',
+        MOTOR_ID,
+        'motor_alarm',
         expect.objectContaining({ triggerSensorId: SENSOR_2 }),
       );
     });
@@ -357,8 +409,12 @@ describe('MotorEvaluationService', () => {
       await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
 
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_trip',
-        expect.objectContaining({ cause: 'critical_reading', triggerSensorId: SENSOR_1 }),
+        MOTOR_ID,
+        'motor_trip',
+        expect.objectContaining({
+          cause: 'critical_reading',
+          triggerSensorId: SENSOR_1,
+        }),
       );
     });
 
@@ -368,7 +424,8 @@ describe('MotorEvaluationService', () => {
       }
 
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_alarm',
+        MOTOR_ID,
+        'motor_alarm',
         expect.objectContaining({ gracePeriodMs: PARAMS.alarmGracePeriodMs }),
       );
     });
@@ -407,14 +464,18 @@ describe('MotorEvaluationService', () => {
       }
 
       expect(statusTransition.createAlert).toHaveBeenCalledWith(
-        MOTOR_ID, 'motor_alarm', expect.anything(),
+        MOTOR_ID,
+        'motor_alarm',
+        expect.anything(),
       );
 
       const alertCallsBefore = statusTransition.createAlert.mock.calls.length;
       await service.pushReading(SENSOR_2, MOTOR_ID, false, false);
       await service.pushReading(SENSOR_3, MOTOR_ID, false, false);
 
-      expect(statusTransition.createAlert.mock.calls.length).toBe(alertCallsBefore);
+      expect(statusTransition.createAlert.mock.calls.length).toBe(
+        alertCallsBefore,
+      );
     });
   });
 });

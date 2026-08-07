@@ -105,7 +105,11 @@ export class CommandService implements OnModuleInit {
   }
 
   /** Low-level MQTT publish with QoS 1. */
-  private publish(topic: string, payload: string, retain = false): Promise<void> {
+  private publish(
+    topic: string,
+    payload: string,
+    retain = false,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       this.client.publish(topic, payload, { qos: 1, retain }, (err) => {
         if (err) reject(err);

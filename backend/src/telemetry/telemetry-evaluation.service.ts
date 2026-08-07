@@ -57,7 +57,15 @@ export class TelemetryEvaluationService implements OnModuleInit {
     const motorStatuses = new Map<number, string>();
     const sensorStatuses = new Map<number, string>();
     const motorSensorIds = new Map<number, number[]>();
-    const motorParams = new Map<number, { alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number }>();
+    const motorParams = new Map<
+      number,
+      {
+        alarmConsecutiveReadings: number;
+        alarmGracePeriodMs: number;
+        postRestartCooldownMs: number;
+        maxAutoRestarts: number;
+      }
+    >();
 
     for (const sensor of sensors) {
       const range = this.plausibleRanges[sensor.sensorType] || {
@@ -235,6 +243,8 @@ export class TelemetryEvaluationService implements OnModuleInit {
       this.motorEval.setMotorParams(motorId, {
         alarmConsecutiveReadings: sensors[0].motor.alarmConsecutiveReadings,
         alarmGracePeriodMs: sensors[0].motor.alarmGracePeriodMs,
+        postRestartCooldownMs: sensors[0].motor.postRestartCooldownMs,
+        maxAutoRestarts: sensors[0].motor.maxAutoRestarts,
       });
     }
 
@@ -269,18 +279,25 @@ export class TelemetryEvaluationService implements OnModuleInit {
    */
   updateSensorThresholds(
     sensorId: number,
-    thresholds: { healthyMax?: number; warningMax?: number; criticalMax?: number },
+    thresholds: {
+      healthyMax?: number;
+      warningMax?: number;
+      criticalMax?: number;
+    },
   ): void {
     const meta = this.sensorMeta.get(sensorId);
     if (!meta) return;
 
-    if (thresholds.healthyMax !== undefined) meta.healthyMax = thresholds.healthyMax;
-    if (thresholds.warningMax !== undefined) meta.warningMax = thresholds.warningMax;
-    if (thresholds.criticalMax !== undefined) meta.criticalMax = thresholds.criticalMax;
+    if (thresholds.healthyMax !== undefined)
+      meta.healthyMax = thresholds.healthyMax;
+    if (thresholds.warningMax !== undefined)
+      meta.warningMax = thresholds.warningMax;
+    if (thresholds.criticalMax !== undefined)
+      meta.criticalMax = thresholds.criticalMax;
 
     this.logger.log(
       `Thresholds updated in-memory for sensor ${sensorId}: ` +
-      `healthy<${meta.healthyMax} warning<${meta.warningMax} critical<${meta.criticalMax}`,
+        `healthy<${meta.healthyMax} warning<${meta.warningMax} critical<${meta.criticalMax}`,
     );
   }
 
@@ -289,11 +306,45 @@ export class TelemetryEvaluationService implements OnModuleInit {
    */
   updateMotorParams(
     motorId: number,
-    params: { alarmConsecutiveReadings: number; alarmGracePeriodMs: number; postRestartCooldownMs: number; maxAutoRestarts: number },
+    params: {
+      alarmConsecutiveReadings: number;
+      alarmGracePeriodMs: number;
+      postRestartCooldownMs: number;
+      maxAutoRestarts: number;
+    },
   ): void {
     this.motorEval.setMotorParams(motorId, params);
     this.logger.log(
       `Motor ${motorId} params updated: consecutive=${params.alarmConsecutiveReadings}, grace=${params.alarmGracePeriodMs}ms, cooldown=${params.postRestartCooldownMs}ms, maxRestarts=${params.maxAutoRestarts}`,
+    );
+  }
+
+  /**
+   * Apply global alert config to all motors without a per-motor override.
+   */
+  async applyGlobalAlertConfig(globalConfig: {
+    alarmConsecutiveReadings: number;
+    alarmGracePeriodMs: number;
+    postRestartCooldownMs: number;
+    maxAutoRestarts: number;
+  }): Promise<void> {
+    const overrides = await this.repository.getMotorIdsWithOverrides();
+    const overrideSet = new Set(overrides);
+
+    // Get unique motor IDs from sensor metadata
+    const motorIds = new Set<number>();
+    for (const meta of this.sensorMeta.values()) {
+      motorIds.add(meta.motorId);
+    }
+
+    for (const motorId of motorIds) {
+      if (!overrideSet.has(motorId)) {
+        this.motorEval.setMotorParams(motorId, globalConfig);
+      }
+    }
+
+    this.logger.log(
+      `Applied global alert config to ${motorIds.size - overrideSet.size} motors (${overrideSet.size} with overrides)`,
     );
   }
 }

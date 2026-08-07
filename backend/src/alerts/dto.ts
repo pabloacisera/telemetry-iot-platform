@@ -1,4 +1,11 @@
-import { IsOptional, IsInt, IsIn, IsDateString, Min, Max } from 'class-validator';
+import {
+  IsOptional,
+  IsInt,
+  IsIn,
+  IsDateString,
+  Min,
+  Max,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 /** DTO for GET /alerts/history query params. */

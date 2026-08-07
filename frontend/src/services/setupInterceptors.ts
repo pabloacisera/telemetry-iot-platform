@@ -33,7 +33,7 @@ export function setupInterceptors(store: Store): void {
         originalRequest._retry = true;
 
         try {
-          await store.dispatch(refreshToken()).unwrap();
+          await (store.dispatch as (action: any) => any)(refreshToken()).unwrap();
           const state = store.getState();
           originalRequest.headers.Authorization = `Bearer ${state.auth.accessToken}`;
           return api(originalRequest);

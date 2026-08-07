@@ -82,7 +82,7 @@ export const socketMiddleware: Middleware = (storeAPI) => {
 
     socket.on('reconnect', () => {
       console.log('[WS] Reconnected, refetching snapshot');
-      storeAPI.dispatch(fetchMotors());
+      storeAPI.dispatch(fetchMotors() as any);
     });
 
     socket.on('telemetry', (data: TelemetryEvent) => {
@@ -124,7 +124,7 @@ export const socketMiddleware: Middleware = (storeAPI) => {
     }
   }
 
-  return (next) => (action: UnknownAction) => {
+  return (next) => (action: unknown) => {
     const result = next(action);
     const type = (action as UnknownAction & { type?: string }).type;
 

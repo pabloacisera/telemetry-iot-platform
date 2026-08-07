@@ -22,6 +22,7 @@ function createStoreWithRole(role: string | null) {
         user: role ? { userId: 1, email: 'test@test.com', role } : null,
         accessToken: role ? 'fake-token' : null,
         loading: false,
+        refreshAttempted: true,
         error: null,
       },
     },

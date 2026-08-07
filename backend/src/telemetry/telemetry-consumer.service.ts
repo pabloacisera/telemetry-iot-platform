@@ -248,7 +248,9 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
       });
       if (
         motor &&
-        (motor.status === 'manual_shutdown' || motor.status === 'restarting' || motor.status === 'shutting_down')
+        (motor.status === 'manual_shutdown' ||
+          motor.status === 'restarting' ||
+          motor.status === 'shutting_down')
       ) {
         await this.statusTransition.transitionMotor(
           motorId,
