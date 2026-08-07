@@ -40,5 +40,10 @@ logs/
 coverage/
 .nyc_output/
 
-# Simulator hot-reload persistence (contains MQTT passwords)
+# Simulator hot-reload persistence (contains MQTT passwords — auto-generated at runtime)
 simulator/data/hot_motors.csv
+
+# Internal working files (not for public repo)
+CHANGELOG*.md
+SPRINT.md
+PROMPT-PARA-KIRO.md

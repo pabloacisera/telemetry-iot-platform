@@ -121,6 +121,8 @@ cp .env.example .env        # fill in GROQ_API_KEY and secrets
 docker compose up --build
 ```
 
+> `simulator/data/hot_motors.csv` is git-ignored — it's auto-generated at runtime when motors are added dynamically. The format is documented in `simulator/data/hot_motors.example.csv`.
+
 | Service | URL |
 |---|---|
 | React dashboard | http://localhost:5173 |

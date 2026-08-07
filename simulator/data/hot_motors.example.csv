@@ -1,0 +1,2 @@
+motor_id,rated_current_a,connection_type,mqtt_user,mqtt_pass
+16,8.5,wifi,esp32_motor16,<generated_by_backend>
