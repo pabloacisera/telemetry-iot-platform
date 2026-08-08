@@ -17,6 +17,8 @@ split between both for realism.
 | `plant/motor/{motor_id}/cmd/ack` | ESP32 → backend | 1 | no | Motor command acknowledgment |
 | `plant/motor/{motor_id}/sensor/{type}/cmd` | backend → ESP32 | 1 | no | Command for a specific sensor |
 | `plant/motor/{motor_id}/sensor/{type}/cmd/ack` | ESP32 → backend | 1 | no | Sensor command acknowledgment |
+| `system/simulator/motor-added` | backend → simulator | 1 | yes | Hot-reload: notify simulator to start a new motor instance |
+| `system/simulator/motor-removed` | backend → simulator | 1 | yes | Hot-reload: notify simulator to stop a motor instance |
 | `qa/motor/{motor_id}/inject-fault` | QA script → simulator | 1 | no | Internal tool only, never from the app |
 
 ## Payloads
@@ -58,6 +60,16 @@ If the ESP32 drops without warning, the broker automatically replaces this retai
 { "sensor_type": "vibration", "fault_mode": "stuck" | "out_of_range" | "disconnected" }
 ```
 
+**Hot-reload motor-added (backend → simulator):**
+```json
+{ "motorId": 16, "ratedCurrentA": 10.5, "connectionType": "wifi", "mqttUser": "esp32_motor16", "mqttPass": "..." }
+```
+
+**Hot-reload motor-removed (backend → simulator):**
+```json
+{ "motorId": 16 }
+```
+
 ## ACL (Mosquitto) — one user per device, contained blast radius
 
 ```
@@ -79,6 +91,8 @@ topic write plant/motor/+/cmd
 topic write plant/motor/+/sensor/+/cmd
 topic read  plant/motor/+/cmd/ack
 topic read  plant/motor/+/sensor/+/cmd/ack
+topic write system/simulator/motor-added
+topic write system/simulator/motor-removed
 
 user qa_fault_injector
 topic write qa/motor/+/inject-fault

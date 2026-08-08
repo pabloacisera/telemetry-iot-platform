@@ -4,16 +4,15 @@ Modular monolith (single process), no microservices or gRPC — see rationale in
 
 ```
 AuthModule        login, refresh (with rotation), logout, JwtStrategy, RolesGuard
-UsersModule       User CRUD (admin only)
 MotorsModule      Motor CRUD, snapshot (GET /motors, GET /motors/:id), stop/restart actions
-SensorsModule     motor_sensors: status, last value, PATCH thresholds (validated against sensor_standards)
+MotorConfigModule Motor CRUD (admin), sensor threshold management, alert config, overrides, MQTT provisioning
 TelemetryModule   TelemetryConsumerService (MQTT) + TelemetryEvaluationService (state machine) + repo
 AlertsModule      alerts and sensor_faults, manual resolution endpoint (optimistic locking: 409 if already resolved)
-CommandModule     publishes MQTT commands, correlates request_id ↔ ack, updates status on confirmation
+CommandModule     publishes MQTT commands, correlates request_id ↔ ack via TelemetryConsumerService, updates status on confirmation
 RealtimeGateway   WebSocket (socket.io), rooms by motor_id, emits telemetry/status-change/alert/restart-progress
 CacheModule       Redis wrapper: live snapshot (read and write-through)
 RagModule         LiveContextService + KnowledgeSearchService (Mongo) + RagQueryService (orchestrates + Groq LLM)
-SchedulerModule   daily job: create future partition → aggregate (catch-up) → verify → drop → log result
+ScheduleModule    @nestjs/schedule — daily job: create future partition → aggregate (catch-up) → verify → drop → log result
 ```
 
 ## Each layer, its exact responsibility (to avoid mixing them)
@@ -51,14 +50,19 @@ TelemetryConsumerService (MQTT subscriber)
           → if forced restart required: CommandModule.publishCommand(...)
       → CacheModule.updateSnapshot(...)
       → RealtimeGateway.emitToRoom(motor_id, event)
+
+TelemetryConsumerService also handles cmd/ack:
+  → receives ack on plant/motor/{id}/cmd/ack
+  → CommandService.resolveAck(request_id, status)
+      → StatusTransitionService.apply(...) according to confirmed phase
 ```
 
 ## Outbound command flow — who calls whom
 ```
 MotorsController.restart(motor_id) [requires role admin|operator]
   → CommandService.sendCommand(motor_id, "restart", requested_by=user)
-      → generates request_id, publishes MQTT, saves pending in memory/DB
-  → (async) CommandAckConsumerService receives the ack
-      → resolves the pending
+      → generates request_id, publishes MQTT, saves pending in memory
+  → (async) TelemetryConsumerService receives cmd/ack on plant/motor/{id}/cmd/ack
+      → correlates request_id via CommandService.resolveAck(...)
       → StatusTransitionService.apply(...) according to confirmed phase
 ```

@@ -75,14 +75,18 @@ CREATE TABLE readings_hourly_agg (
 );
 
 -- Motor-level alerts (do not confuse with sensor_faults)
+-- type is free-form VARCHAR; actual values used by the evaluation pipeline:
+--   motor_alarm, motor_trip, motor_disabled, sensor_fault
 CREATE TABLE alerts (
   id INT PRIMARY KEY AUTO_INCREMENT,
   motor_id INT NOT NULL REFERENCES motors(id),
-  type ENUM('warning','forced_restart','disabled','sensor_failure_widespread','system_job_failure') NOT NULL,
+  type VARCHAR(40) NOT NULL,
+  metadata JSON,
   triggered_at DATETIME NOT NULL,
   resolved_at DATETIME NULL,
   resolved_by INT NULL REFERENCES users(id),
-  resolution_note TEXT
+  resolution_note TEXT,
+  deleted_at DATETIME NULL
 );
 
 -- Sensor-level faults (separate from alerts)
@@ -119,6 +123,23 @@ CREATE TABLE refresh_tokens (
   token_hash VARCHAR(255) NOT NULL,
   expires_at DATETIME NOT NULL,
   revoked BOOLEAN DEFAULT FALSE
+);
+
+-- System-wide configuration (singleton key-value)
+CREATE TABLE system_config (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  `key` VARCHAR(50) UNIQUE NOT NULL,
+  value JSON NOT NULL
+);
+
+-- Per-motor override of global alert parameters
+CREATE TABLE motor_alert_overrides (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  motor_id INT UNIQUE NOT NULL REFERENCES motors(id),
+  alarm_consecutive_readings INT NOT NULL,
+  alarm_grace_period_ms INT NOT NULL,
+  post_restart_cooldown_ms INT NOT NULL,
+  max_auto_restarts INT NOT NULL
 );
 
 -- Daily retention job log (repeated failure detection)

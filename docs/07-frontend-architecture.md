@@ -24,6 +24,12 @@ showing stale data during the disconnection gap.
    specific sensor (see `04-anomaly-state-machine.md`).
 3. During `restarting`, the real countdown is shown fed by the `restart-progress` topic.
 
+## Alert history page (`/alertas`)
+Paginated table of all alerts (active and resolved), accessible to all roles. Filters by date range, motor,
+and status (active/resolved). Shows resolution type (human vs automatic) and active duration. Route defined
+in `App.tsx`, page component in `AlertHistoryPage.tsx`. The "Historial" link is visible in `DashboardPage`
+alongside Grafana and reference links.
+
 ## Role-based gating
 `routes/ProtectedRoute.tsx` hides/disables: threshold configuration controls (`admin` only), motor
 stop/restart buttons (`admin`/`operator` only), user management (`admin` only). `viewer` is read-only.

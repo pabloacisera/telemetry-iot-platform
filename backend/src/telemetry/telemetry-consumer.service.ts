@@ -11,6 +11,7 @@ import * as mqtt from 'mqtt';
 import { TelemetryEventDto } from './dto/telemetry-event.dto';
 import { TelemetryEvaluationService } from './telemetry-evaluation.service';
 import { StatusTransitionService } from './status-transition.service';
+import { CommandService } from '../command/command.service';
 import { RealtimeGateway } from '../realtime';
 import { PrismaService } from '../prisma';
 
@@ -41,6 +42,7 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     private readonly configService: ConfigService,
     private readonly evaluationService: TelemetryEvaluationService,
     private readonly statusTransition: StatusTransitionService,
+    private readonly commandService: CommandService,
     private readonly realtime: RealtimeGateway,
     private readonly prisma: PrismaService,
   ) {}
@@ -158,7 +160,11 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     this.client.subscribe('plant/motor/+/telemetry', { qos: 1 });
     this.client.subscribe('plant/motor/+/status', { qos: 1 });
     this.client.subscribe('plant/motor/+/restart-progress', { qos: 0 });
-    this.logger.log('Subscribed to telemetry, status, restart-progress');
+    this.client.subscribe('plant/motor/+/cmd/ack', { qos: 1 });
+    this.client.subscribe('plant/motor/+/sensor/+/cmd/ack', { qos: 1 });
+    this.logger.log(
+      'Subscribed to telemetry, status, restart-progress, cmd/ack',
+    );
   }
 
   /** Route messages to the correct handler based on topic. */
@@ -176,6 +182,8 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
       await this.handleStatus(data);
     } else if (topic.includes('/restart-progress')) {
       await this.handleRestartProgress(data);
+    } else if (topic.includes('/cmd/ack')) {
+      this.handleCommandAck(data);
     }
   }
 
@@ -320,5 +328,36 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
       clearTimeout(timer);
       this.disconnectionTimers.delete(motorId);
     }
+  }
+
+  /**
+   * Handle command acknowledgment from ESP32.
+   * Correlates request_id, resolves the pending command, and logs the result.
+   * This is confirmation-only — the actual state transition still happens
+   * via restart-progress and status (LWT) topics.
+   */
+  private handleCommandAck(data: Record<string, unknown>): void {
+    const requestId = data.request_id as string;
+    const status = data.status as string;
+
+    if (!requestId || !status) {
+      this.logger.warn(`Malformed cmd/ack: ${JSON.stringify(data)}`);
+      return;
+    }
+
+    const pending = this.commandService.resolveAck(requestId, status);
+    if (!pending) {
+      this.logger.debug(`ACK for unknown/expired request_id: ${requestId}`);
+      return;
+    }
+
+    this.realtime.emitStatusChange(pending.motorId, {
+      motorId: pending.motorId,
+      event: 'command_ack',
+      action: pending.action,
+      request_id: requestId,
+      status,
+      timestamp: new Date().toISOString(),
+    });
   }
 }

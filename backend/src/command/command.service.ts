@@ -3,6 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import * as mqtt from 'mqtt';
 import { randomUUID } from 'crypto';
 
+export interface PendingCommand {
+  motorId: number;
+  action: string;
+  requestedBy: string;
+  timestamp: Date;
+}
+
 /**
  * Publishes MQTT commands to motors and sensors.
  *
@@ -12,11 +19,18 @@ import { randomUUID } from 'crypto';
  * - Sensor restart (auto or manual).
  *
  * Each command carries a unique request_id for ack correlation.
+ * Pending commands are tracked in memory; resolved when ack is received.
  */
 @Injectable()
 export class CommandService implements OnModuleInit {
   private client!: mqtt.MqttClient;
   private readonly logger = new Logger(CommandService.name);
+
+  /** Pending commands awaiting ack: request_id → PendingCommand */
+  private readonly pendingCommands = new Map<string, PendingCommand>();
+
+  /** Timeout (ms) after which a pending command is logged as unanswered. */
+  private static readonly ACK_TIMEOUT_MS = 30_000;
 
   constructor(private readonly configService: ConfigService) {}
 
@@ -65,6 +79,7 @@ export class CommandService implements OnModuleInit {
     });
 
     await this.publish(topic, payload);
+    this.trackPending(requestId, motorId, 'restart', requestedBy);
     this.logger.log(`Restart → motor ${motorId} (${requestId})`);
     return requestId;
   }
@@ -81,6 +96,7 @@ export class CommandService implements OnModuleInit {
     });
 
     await this.publish(topic, payload);
+    this.trackPending(requestId, motorId, 'stop', requestedBy);
     this.logger.log(`Stop → motor ${motorId} (${requestId})`);
     return requestId;
   }
@@ -98,10 +114,65 @@ export class CommandService implements OnModuleInit {
     });
 
     await this.publish(topic, payload);
+    this.trackPending(requestId, motorId, 'restart_sensor', 'system');
     this.logger.log(
       `Sensor restart → motor ${motorId}/${sensorType} (${requestId})`,
     );
     return requestId;
+  }
+
+  /**
+   * Resolve a pending command when ack is received.
+   * Returns the pending command info, or undefined if not found (already resolved or unknown).
+   */
+  resolveAck(
+    requestId: string,
+    status: string,
+  ): PendingCommand | undefined {
+    const pending = this.pendingCommands.get(requestId);
+    if (!pending) return undefined;
+
+    this.pendingCommands.delete(requestId);
+
+    if (status === 'done') {
+      this.logger.log(
+        `ACK confirmed: motor ${pending.motorId}, action ${pending.action} (${requestId})`,
+      );
+    } else {
+      this.logger.warn(
+        `ACK rejected: motor ${pending.motorId}, action ${pending.action}, status ${status} (${requestId})`,
+      );
+    }
+
+    return pending;
+  }
+
+  /** Get the number of pending commands (for diagnostics). */
+  getPendingCount(): number {
+    return this.pendingCommands.size;
+  }
+
+  /** Track a pending command and schedule timeout warning. */
+  private trackPending(
+    requestId: string,
+    motorId: number,
+    action: string,
+    requestedBy: string,
+  ): void {
+    this.pendingCommands.set(requestId, {
+      motorId,
+      action,
+      requestedBy,
+      timestamp: new Date(),
+    });
+
+    setTimeout(() => {
+      if (this.pendingCommands.has(requestId)) {
+        this.logger.warn(
+          `ACK timeout: motor ${motorId}, action ${action} — no ack received after ${CommandService.ACK_TIMEOUT_MS / 1000}s (${requestId})`,
+        );
+      }
+    }, CommandService.ACK_TIMEOUT_MS);
   }
 
   /** Low-level MQTT publish with QoS 1. */

@@ -75,6 +75,14 @@ services:
   # Application services (custom Dockerfiles)
   # ===========================================================
 
+  telemetry-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: frontend-react
+    networks:
+      - telemetry-net
+
   telemetry-backend-nestjs:
     build:
       context: ./backend

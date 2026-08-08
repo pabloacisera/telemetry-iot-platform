@@ -110,8 +110,11 @@ Todos los endpoints requieren `JwtAuthGuard` + `RolesGuard` con `@Roles('admin')
 
 1. Admin confirma eliminación (prompt en frontend).
 2. Backend soft-delete en transacción: `motor_sensors`, `motor`.
-3. `MqttProvisioningService` remueve entradas de `password_file` y `acl_file`.
-4. Se envía `SIGHUP` para recargar Mosquitto.
+3. `TelemetryConsumerService.unregisterMotor()` remueve el motor de los lookup maps y evaluation service.
+4. `CommandService.notifySimulatorMotorRemoved()` publica en `system/simulator/motor-removed` para que el
+   simulator detenga la generación de datos de ese motor.
+5. `MqttProvisioningService` remueve entradas de `password_file` y `acl_file`.
+6. Se envía `SIGHUP` para recargar Mosquitto.
 
 ---
 
