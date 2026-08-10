@@ -291,7 +291,7 @@ alarm + resolve por operador -> healthy
 - **Estado en memoria**: Map `motorStates` (motorId -> MotorState)
 - **Lock distribuido**: Redis SETNX con 200ms TTL (`lock:motor:{id}`)
 - **Timer de gracia**: Redis `state:escalation:{id}` (TTL 3 min)
-- **Cooldown post-reinicio**: 60s, duplica umbral de alarma
+- **Cooldown post-reinicio**: piso de 5 min (`POST_RESTART_COOLDOWN_MS`, default 300000ms), duplica umbral de alarma
 
 ---
 
@@ -303,7 +303,10 @@ Cada sensor tiene un contador independiente de lecturas anomalias consecutivas. 
 
 ### Cooldown post-reinicio
 
-Despues de un reinicio, el umbral de alarma se duplica (requiere 2N lecturas) durante 60 segundos. Esto prevene ciclos trip-restart-trip.
+Despues de un reinicio, el umbral de alarma se duplica (requiere 2N lecturas) durante al menos
+`POST_RESTART_COOLDOWN_MS` (default 300000ms / 5 min). Se aplica el maximo entre este piso y el
+`postRestartCooldownMs` configurado por motor, asi un motor no puede volver a trip rápido
+despues de un restart. Esto prevene ciclos trip-restart-trip.
 
 ### Trip inmediato
 

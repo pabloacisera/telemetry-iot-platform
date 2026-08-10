@@ -40,6 +40,10 @@ Formulario con los 4 parámetros de alarma: `alarmConsecutiveReadings`,
 `alarmGracePeriodMs`, `postRestartCooldownMs`, `maxAutoRestarts`.
 Aplica a todos los motores sin override.
 
+> Nota: `postRestartCooldownMs` tiene un **piso** por env `POST_RESTART_COOLDOWN_MS`
+> (default 300000ms / 5 min). Valores configurados por debajo de ese piso no surten efecto;
+> el cooldown efectivo es `max(motor, piso)`. Ver `docs/25-alert-history.md`.
+
 **Sección 2 — Regla personalizada (botón)**
 Botón que abre `EditOverrideModal` para crear/editar un override de alertas para un motor.
 

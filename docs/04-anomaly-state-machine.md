@@ -9,8 +9,11 @@ This is the most important business logic in the system. Read it alongside `03-m
   When a single sensor sustains anomalous readings for N consecutive readings, the motor enters ALARM.
 - **Grace period**: configurable per motor (`alarmGracePeriodMs`, default 120000ms / 2 minutes).
   After ALARM is triggered, the operator has this window to intervene before the system trips.
-- **Post-restart cooldown**: 60 seconds after a motor restarts, the alarm threshold is doubled (2N
+- **Post-restart cooldown**: after a motor restarts, the alarm threshold is doubled (2N
   consecutive readings required). This prevents the trip→restart→trip cycle from happening too rapidly.
+  The effective duration is the maximum between the per-motor `postRestartCooldownMs` and the
+  `POST_RESTART_COOLDOWN_MS` env floor (default **300000 ms / 5 minutes**), so motors stay in a
+  reduced-sensitivity window for at least 5 minutes after every restart.
 - "Warning" zone: value between `warning_max` and `critical_max` (counts as anomalous).
 - "Critical" zone: value > `critical_max` — a single reading triggers **immediate trip** (no grace timer).
 - Default `critical_max` values: vibration >4.5 mm/s, temperature >90°C, current >1.3× rated.

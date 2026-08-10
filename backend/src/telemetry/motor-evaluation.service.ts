@@ -211,7 +211,9 @@ export class MotorEvaluationService {
     this.clearGraceTimer(motorId);
     this.lastRestartTime.set(motorId, Date.now());
     const params = this.motorParams.get(motorId);
-    const cooldownSec = (params?.postRestartCooldownMs ?? 60_000) / 1000;
+    const cooldownFloorMs = Number(process.env.POST_RESTART_COOLDOWN_MS) || 300_000;
+    const cooldownSec =
+      Math.max(params?.postRestartCooldownMs ?? 60_000, cooldownFloorMs) / 1000;
     this.logger.log(
       `Motor ${motorId}: window reset, cooldown started (${cooldownSec}s)`,
     );
@@ -408,7 +410,11 @@ export class MotorEvaluationService {
     const lastRestart = this.lastRestartTime.get(motorId);
     if (!lastRestart) return false;
     const params = this.motorParams.get(motorId);
-    const cooldownMs = params?.postRestartCooldownMs ?? 60_000;
+    const cooldownFloorMs = Number(process.env.POST_RESTART_COOLDOWN_MS) || 300_000;
+    const cooldownMs = Math.max(
+      params?.postRestartCooldownMs ?? 60_000,
+      cooldownFloorMs,
+    );
     return Date.now() - lastRestart < cooldownMs;
   }
 

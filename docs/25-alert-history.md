@@ -165,8 +165,11 @@ Solo falta exponer la relación `resolvedByUser` en las queries de Prisma.
   El frontend solo manda los parámetros y usa `total` de la respuesta. Esto evita traer
   lotes enormes en memoria y mantiene el contador/paginado exactos con miles de alertas.
 - El volumen de alertas se controla en dos frentes:
-  1. **De-duplicación** en `StatusTransitionService.createAlert()` — no se crea una alerta
-     nueva si el motor ya tiene una abierta del mismo tipo.
+  1. **Anti-flood** en `StatusTransitionService.createAlert()` — no se crea una alerta nueva si el
+     motor ya tiene una abierta del mismo tipo **o** si la última alerta de ese tipo (aunque ya se
+     haya auto-resuelto) se creó hace menos de `ALERT_THROTTLE_MS` (default **300000ms / 5 min**).
+     Esto evita el flood cuando un motor cicla rápido trip → restart → healthy → trip: cada motor
+     vuelve a generar una alerta por tipo a lo sumo una vez por ventana.
   2. **Retención** — las alertas resueltas de más de `ALERT_RETENTION_DAYS` (default 30) se
      purgan por el job horario de `RetentionService` (ver `docs/20-retention-guide.md`).
 - `resolvedBy: null` con `resolvedAt` no null = resolución automática del sistema

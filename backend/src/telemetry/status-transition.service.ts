@@ -155,12 +155,13 @@ export class StatusTransitionService {
   /**
    * Create a motor-level alert and emit it via WebSocket.
    *
-   * De-duplication: if the motor already has an OPEN alert of the same type,
-   * the new alert is skipped. This prevents alert spam when a fault recurs
-   * while a previous alert for the same condition is still unresolved
-   * (e.g. repeated trips from the simulator). Escalations are preserved
-   * because they use different types (motor_alarm → motor_trip, sensor_fault
-   * → sensor_fault_persistent).
+   * Anti-flood: a new alert is skipped if the motor already has an OPEN alert
+   * of the same type, or if the most recent alert of that type (even if it was
+   * already resolved, e.g. auto-resolved on recovery to healthy) was created
+   * within the last ALERT_THROTTLE_MS (default 5 minutes). This prevents alert
+   * spam when a fault recurs in quick cycles while the previous window was
+   * closed. Escalations are preserved because they use different types
+   * (motor_alarm → motor_trip, sensor_fault → sensor_fault_persistent).
    */
   async createAlert(
     motorId: number,
@@ -168,15 +169,21 @@ export class StatusTransitionService {
     metadata?: Record<string, unknown>,
   ): Promise<void> {
     const existing = await this.prisma.alert.findFirst({
-      where: { motorId, type, resolvedAt: null, deletedAt: null },
-      select: { id: true },
+      where: { motorId, type, deletedAt: null },
+      orderBy: { triggeredAt: 'desc' },
+      select: { id: true, resolvedAt: true, triggeredAt: true },
     });
 
     if (existing) {
-      this.logger.debug(
-        `Alert skipped (already open): motor ${motorId}, type ${type} (alert ${existing.id})`,
-      );
-      return;
+      const throttleMs = Number(process.env.ALERT_THROTTLE_MS) || 300_000;
+      const withinThrottle =
+        Date.now() - existing.triggeredAt.getTime() < throttleMs;
+      if (existing.resolvedAt === null || withinThrottle) {
+        this.logger.debug(
+          `Alert skipped (throttled): motor ${motorId}, type ${type} (alert ${existing.id})`,
+        );
+        return;
+      }
     }
 
     const jsonMeta = metadata ? (metadata as Prisma.InputJsonValue) : undefined;

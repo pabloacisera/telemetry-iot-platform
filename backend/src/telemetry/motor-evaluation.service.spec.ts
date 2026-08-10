@@ -33,6 +33,16 @@ describe('MotorEvaluationService', () => {
     restoreEscalationTimers: jest.Mock;
   };
 
+  // The production cooldown floor (POST_RESTART_COOLDOWN_MS) defaults to 5 min;
+  // tests pin it to 60s so the cooldown matches PARAMS.postRestartCooldownMs.
+  beforeAll(() => {
+    process.env.POST_RESTART_COOLDOWN_MS = '60000';
+  });
+
+  afterAll(() => {
+    delete process.env.POST_RESTART_COOLDOWN_MS;
+  });
+
   // Default protection params: 3 consecutive readings, 500ms grace (for fast tests)
   const PARAMS = {
     alarmConsecutiveReadings: 3,
