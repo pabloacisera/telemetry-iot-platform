@@ -63,6 +63,12 @@ export class RealtimeGateway
     this.server.to(`motor:${motorId}`).emit('alert', data);
   }
 
+  /** Emit an alert resolution globally AND to motor room. */
+  emitAlertResolved(motorId: number, data: Record<string, unknown>): void {
+    this.server.to('dashboard').emit('alert-resolved', data);
+    this.server.to(`motor:${motorId}`).emit('alert-resolved', data);
+  }
+
   /** Emit restart countdown progress to dashboard AND motor room. */
   emitRestartProgress(motorId: number, data: Record<string, unknown>): void {
     this.server.to('dashboard').emit('restart-progress', data);

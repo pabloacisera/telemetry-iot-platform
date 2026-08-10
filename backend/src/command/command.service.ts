@@ -125,10 +125,7 @@ export class CommandService implements OnModuleInit {
    * Resolve a pending command when ack is received.
    * Returns the pending command info, or undefined if not found (already resolved or unknown).
    */
-  resolveAck(
-    requestId: string,
-    status: string,
-  ): PendingCommand | undefined {
+  resolveAck(requestId: string, status: string): PendingCommand | undefined {
     const pending = this.pendingCommands.get(requestId);
     if (!pending) return undefined;
 

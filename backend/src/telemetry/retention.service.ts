@@ -1,13 +1,16 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma';
+import { RealtimeGateway } from '../realtime';
 
 /**
  * Retention service — scheduled jobs for data lifecycle management.
  *
- * Two responsibilities:
+ * Responsibilities:
  * 1. Hourly aggregation: condense raw readings into readings_hourly_agg.
  * 2. Purge: delete raw readings older than RETENTION_DAYS (default 7).
+ * 3. Purge: hard-delete resolved alerts older than ALERT_RETENTION_DAYS (default 30).
+ * 4. Stale alert sweep: auto-resolve alerts still open after 24h (safety net).
  *
  * Runs every hour at minute 5 (avoids exact hour boundary race conditions).
  * Logs results to retention_job_log for observability.
@@ -19,7 +22,17 @@ export class RetentionService {
   /** Raw readings retention in days. After this, only hourly aggregates remain. */
   private readonly retentionDays = Number(process.env.RETENTION_DAYS) || 7;
 
-  constructor(private readonly prisma: PrismaService) {}
+  /** Resolved alerts retention in days. Older resolved alerts are hard-deleted. */
+  private readonly alertRetentionDays =
+    Number(process.env.ALERT_RETENTION_DAYS) || 30;
+
+  /** Max age for an open alert before it is auto-resolved. */
+  private readonly staleAlertMaxAgeMs = 24 * 60 * 60 * 1000;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly realtime: RealtimeGateway,
+  ) {}
 
   /**
    * Main retention job — runs every hour at :05.
@@ -33,14 +46,16 @@ export class RetentionService {
 
     let partitionsAggregated = 0;
     let partitionsDropped = 0;
+    let alertsPurged = 0;
     let error: string | null = null;
 
     try {
       partitionsAggregated = await this.aggregateLastHour();
       partitionsDropped = await this.purgeOldReadings();
+      alertsPurged = await this.purgeOldAlerts();
 
       this.logger.log(
-        `Retention job complete: aggregated=${partitionsAggregated}, purged=${partitionsDropped}`,
+        `Retention job complete: aggregated=${partitionsAggregated}, purged=${partitionsDropped}, alertsPurged=${alertsPurged}`,
       );
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
@@ -57,6 +72,47 @@ export class RetentionService {
         error,
       },
     });
+  }
+
+  /**
+   * Stale alert sweep — runs at minute 20 of every hour.
+   * Safety net: resolves any alert still open after 24h (e.g. motors that
+   * never recover), emitting 'alert-resolved' so the UI updates in real time.
+   */
+  @Cron('20 * * * *', { name: 'stale-alert-sweep' })
+  async handleStaleAlertSweep(): Promise<void> {
+    const cutoff = new Date(Date.now() - this.staleAlertMaxAgeMs);
+
+    const stale = await this.prisma.alert.findMany({
+      where: { resolvedAt: null, deletedAt: null, triggeredAt: { lt: cutoff } },
+      select: { id: true, motorId: true },
+    });
+
+    if (stale.length === 0) {
+      this.logger.debug('Stale alert sweep: no open alerts older than 24h');
+      return;
+    }
+
+    await this.prisma.alert.updateMany({
+      where: { id: { in: stale.map((a) => a.id) } },
+      data: {
+        resolvedAt: new Date(),
+        resolvedBy: null,
+        resolutionNote: 'Auto-resuelta por antigüedad (sweep 24h)',
+      },
+    });
+
+    for (const alert of stale) {
+      this.realtime.emitAlertResolved(alert.motorId, {
+        id: alert.id,
+        motorId: alert.motorId,
+        resolvedAt: new Date().toISOString(),
+      });
+    }
+
+    this.logger.log(
+      `Stale alert sweep: auto-resolved ${stale.length} alert(s) older than 24h`,
+    );
   }
 
   /**
@@ -151,6 +207,26 @@ export class RetentionService {
     const result = await this.prisma.reading.deleteMany({
       where: {
         recordedAt: { lt: cutoff },
+      },
+    });
+
+    return result.count;
+  }
+
+  /**
+   * Hard-delete resolved alerts older than alertRetentionDays.
+   * Active alerts are never touched — only alerts with a resolution timestamp
+   * older than the cutoff are removed. Keeps the alerts table bounded so the
+   * history UI does not grow unbounded over time.
+   */
+  private async purgeOldAlerts(): Promise<number> {
+    const cutoff = new Date(
+      Date.now() - this.alertRetentionDays * 24 * 60 * 60 * 1000,
+    );
+
+    const result = await this.prisma.alert.deleteMany({
+      where: {
+        resolvedAt: { not: null, lt: cutoff },
       },
     });
 

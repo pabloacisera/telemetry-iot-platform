@@ -1,5 +1,6 @@
 import { Injectable, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma';
+import { Prisma } from '@prisma/client';
 
 export interface AlertHistoryParams {
   page: number;
@@ -8,6 +9,7 @@ export interface AlertHistoryParams {
   from?: Date;
   to?: Date;
   status?: 'all' | 'active' | 'resolved';
+  cause?: string;
 }
 
 export interface AlertHistoryResult {
@@ -63,7 +65,7 @@ export class AlertsService {
    * Includes motor info and resolvedByUser for the history table.
    */
   async getHistory(params: AlertHistoryParams): Promise<AlertHistoryResult> {
-    const { page, limit, motorId, from, to, status } = params;
+    const { page, limit, motorId, from, to, status, cause } = params;
 
     const where: Record<string, unknown> = { deletedAt: null };
 
@@ -78,6 +80,13 @@ export class AlertsService {
 
     if (status === 'active') where.resolvedAt = null;
     if (status === 'resolved') where.resolvedAt = { not: null };
+
+    // Causa = valor de metadata.cause (JSON). 'none' = alertas sin metadata.
+    if (cause === 'none') {
+      where.metadata = { equals: Prisma.DbNull };
+    } else if (cause) {
+      where.metadata = { path: ['cause'], string_contains: cause };
+    }
 
     const [data, total] = await this.prisma.$transaction([
       this.prisma.alert.findMany({

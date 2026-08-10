@@ -1,8 +1,11 @@
 # Multi-stage build for NestJS backend
 # Stage 1: install deps and build
-FROM node:20-alpine AS builder
+# NOTE: glibc-based image (node:20-slim) is required because onnxruntime-node
+# (used for RAG embeddings via @xenova/transformers) ships glibc prebuilt
+# binaries; Alpine/musl fails to load libonnxruntime.so at runtime.
+FROM node:20-slim AS builder
 
-RUN apk add --no-cache openssl
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -17,9 +20,9 @@ RUN npm run build
 RUN npx tsc prisma/seed.ts --outDir dist-seed --esModuleInterop --resolveJsonModule --skipLibCheck
 
 # Stage 2: production image
-FROM node:20-alpine AS runner
+FROM node:20-slim AS runner
 
-RUN apk add --no-cache openssl
+RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 

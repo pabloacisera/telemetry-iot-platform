@@ -60,7 +60,49 @@ export class StatusTransitionService {
       await this.transitionMotorSensors(motorId, 'fault');
     } else if (toStatus === 'healthy') {
       await this.transitionMotorSensors(motorId, 'ok');
+      // Auto-resolve this motor's open alerts once it recovers to healthy.
+      await this.resolveMotorAlerts(motorId);
     }
+  }
+
+  /**
+   * Resolve all open motor-level alerts (alarm/trip/disabled) for a motor.
+   * Called when the motor recovers to healthy. Uses resolvedBy=null so the
+   * frontend shows the resolution as "Automática". Emits 'alert-resolved'.
+   */
+  private async resolveMotorAlerts(motorId: number): Promise<void> {
+    const alerts = await this.prisma.alert.findMany({
+      where: {
+        motorId,
+        resolvedAt: null,
+        deletedAt: null,
+        type: { in: ['motor_alarm', 'motor_trip', 'motor_disabled'] },
+      },
+      select: { id: true },
+    });
+
+    if (alerts.length === 0) return;
+
+    await this.prisma.alert.updateMany({
+      where: { id: { in: alerts.map((a) => a.id) } },
+      data: {
+        resolvedAt: new Date(),
+        resolvedBy: null,
+        resolutionNote: 'Auto-resuelta al recuperarse el motor',
+      },
+    });
+
+    for (const alert of alerts) {
+      this.realtime.emitAlertResolved(motorId, {
+        id: alert.id,
+        motorId,
+        resolvedAt: new Date().toISOString(),
+      });
+    }
+
+    this.logger.log(
+      `Motor ${motorId}: auto-resolved ${alerts.length} alert(s) on recovery to healthy`,
+    );
   }
 
   /** Transition a sensor to a new status. */
@@ -110,12 +152,33 @@ export class StatusTransitionService {
     }
   }
 
-  /** Create a motor-level alert and emit it via WebSocket. */
+  /**
+   * Create a motor-level alert and emit it via WebSocket.
+   *
+   * De-duplication: if the motor already has an OPEN alert of the same type,
+   * the new alert is skipped. This prevents alert spam when a fault recurs
+   * while a previous alert for the same condition is still unresolved
+   * (e.g. repeated trips from the simulator). Escalations are preserved
+   * because they use different types (motor_alarm → motor_trip, sensor_fault
+   * → sensor_fault_persistent).
+   */
   async createAlert(
     motorId: number,
     type: string,
     metadata?: Record<string, unknown>,
   ): Promise<void> {
+    const existing = await this.prisma.alert.findFirst({
+      where: { motorId, type, resolvedAt: null, deletedAt: null },
+      select: { id: true },
+    });
+
+    if (existing) {
+      this.logger.debug(
+        `Alert skipped (already open): motor ${motorId}, type ${type} (alert ${existing.id})`,
+      );
+      return;
+    }
+
     const jsonMeta = metadata ? (metadata as Prisma.InputJsonValue) : undefined;
     const alert = await this.prisma.alert.create({
       data: { motorId, type, metadata: jsonMeta, triggeredAt: new Date() },

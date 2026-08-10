@@ -3,6 +3,7 @@ import {
   IsInt,
   IsIn,
   IsDateString,
+  IsString,
   Min,
   Max,
 } from 'class-validator';
@@ -39,4 +40,14 @@ export class GetAlertHistoryDto {
   @IsOptional()
   @IsIn(['all', 'active', 'resolved'])
   status?: 'all' | 'active' | 'resolved' = 'all';
+
+  /**
+   * Causa de la alerta (valor de `metadata.cause`).
+   * Valores: sustained_anomaly, critical_reading, grace_timer_expired,
+   * recurrence_after_restart. El valor especial 'none' filtra alertas sin
+   * causa (sensor faults y alertas antiguas sin metadata).
+   */
+  @IsOptional()
+  @IsString()
+  cause?: string;
 }

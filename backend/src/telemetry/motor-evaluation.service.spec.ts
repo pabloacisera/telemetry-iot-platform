@@ -389,6 +389,63 @@ describe('MotorEvaluationService', () => {
         'alarm',
       );
     });
+
+    it('should NOT trip immediately on a critical reading during cooldown', async () => {
+      // Simulate a restart (starts the cooldown window)
+      await service.resetWindow(MOTOR_ID);
+
+      // Critical reading while still in cooldown → must NOT trip instantly
+      await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
+
+      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
+        MOTOR_ID,
+        'healthy',
+        'shutting_down',
+      );
+      expect(statusTransition.transitionMotor).not.toHaveBeenCalledWith(
+        MOTOR_ID,
+        'healthy',
+        'disabled',
+      );
+      expect(statusTransition.createAlert).not.toHaveBeenCalledWith(
+        MOTOR_ID,
+        'motor_trip',
+        expect.anything(),
+      );
+      expect(commandService.publishRestart).not.toHaveBeenCalled();
+
+      // It feeds the consecutive counter instead: with enough critical
+      // readings (2N during cooldown) it still escalates to an alarm.
+      for (let i = 0; i < PARAMS.alarmConsecutiveReadings * 2 - 1; i++) {
+        await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
+      }
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID,
+        'healthy',
+        'alarm',
+      );
+    });
+
+    it('should trip immediately on a critical reading after cooldown expires', async () => {
+      // Simulate a restart (starts the cooldown window)
+      await service.resetWindow(MOTOR_ID);
+
+      // Advance past cooldown (60s)
+      jest.advanceTimersByTime(61_000);
+
+      await service.pushReading(SENSOR_1, MOTOR_ID, true, true);
+
+      expect(statusTransition.transitionMotor).toHaveBeenCalledWith(
+        MOTOR_ID,
+        'healthy',
+        'shutting_down',
+      );
+      expect(statusTransition.createAlert).toHaveBeenCalledWith(
+        MOTOR_ID,
+        'motor_trip',
+        expect.objectContaining({ reason: 'critical_reading' }),
+      );
+    });
   });
 
   // ─────────────────────────────────────────────────────────────────

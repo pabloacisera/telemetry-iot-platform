@@ -23,7 +23,11 @@ import { CacheService } from '../cache';
  *
  * COOLDOWN: After a restart, the motor enters a 60s cooldown period where the
  * alarm threshold is doubled (2N consecutive readings required). This prevents
- * the trip→restart→trip cycle from happening too rapidly.
+ * the trip→restart→trip cycle from happening too rapidly. During cooldown,
+ * critical readings ALSO do NOT trip immediately: they feed the consecutive
+ * counter instead, so a re-trip can only happen via the alarm + grace timer
+ * (giving the operator time). A critical reading only trips immediately once
+ * the cooldown has expired.
  *
  * METADATA: Every alarm/trip alert includes cause information (which sensor,
  * what value, what threshold) so the operator always knows what happened.
@@ -143,9 +147,14 @@ export class MotorEvaluationService {
       const motorStatus = this.motorStatuses.get(motorId);
 
       // ── IMMEDIATE TRIP: critical reading on healthy/alarm motor ──
+      // Suppressed during the post-restart cooldown: a critical reading then
+      // counts as an anomalous reading (falls through to the counter logic),
+      // so the motor can still alarm and trip via the grace timer, but not
+      // instantly again right after a restart.
       if (
         isCritical &&
-        (motorStatus === 'healthy' || motorStatus === 'alarm')
+        (motorStatus === 'healthy' || motorStatus === 'alarm') &&
+        !this.isInCooldown(motorId)
       ) {
         await this.triggerTrip(motorId, 'critical_reading', motorSensorId);
         return;
