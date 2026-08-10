@@ -63,7 +63,8 @@
         mode: "0755"
 
     # =========================================================================
-    # 2. Crear red Docker
+    # 2. Crear red Docker (garantía; docker compose ahora la auto-crea con
+    #    networks: name: <app_name>-net, así que este paso es idempotente)
     # =========================================================================
     - name: "Paso 2: Crear red Docker {{ app_name }}-net"
       command: "docker network create {{ app_name }}-net"
@@ -160,9 +161,12 @@
 
     # =========================================================================
     # 9. Ejecutar migraciones (opcional)
+    #    NOTA: el backend de este proyecto ya ejecuta `prisma migrate deploy`
+    #    al arrancar (ver backend/Dockerfile). Si una app necesita correrlas
+    #    aquí, ajustar el nombre del servicio correspondiente (ej: telemetry-backend-nestjs).
     # =========================================================================
     - name: "Paso 9: Ejecutar migraciones de base de datos"
-      command: docker compose exec -T backend npx prisma migrate deploy
+      command: "docker compose exec -T {{ migration_service | default('backend') }} npx prisma migrate deploy"
       args:
         chdir: "{{ deploy_path }}"
       when: run_migrations | bool

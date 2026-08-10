@@ -4,7 +4,7 @@
 # What it does (idempotent — safe to run multiple times):
 # 1. Copies the project to /opt/telemetry-platform/ on the EC2.
 # 2. Copies the production .env file.
-# 3. Runs docker compose up -d (builds and starts all 7 containers).
+# 3. Runs docker compose up -d (builds and starts all 8 containers).
 # 4. Copies the Nginx site config to the global Nginx conf.d/.
 # 5. Validates and reloads global Nginx (never restarts it).
 #
@@ -21,10 +21,10 @@
   hosts: production
   become: true
   vars:
-    project_name: telemetry-platform
-    deploy_path: /opt/{{ project_name }}
-    nginx_conf_dir: /home/ec2-user/global/nginx/conf.d
-    app_domain: app1.yourdomain.com
+    project_name: telemetry
+    deploy_path: /opt/apps/{{ project_name }}
+    nginx_conf_dir: /opt/infra/conf.d
+    app_domain: telemetry.artisandevs.site
 
   tasks:
     # ----------------------------------------------------------
@@ -77,14 +77,14 @@
         var: compose_result.stdout
       when: compose_result.changed
 
-    - name: Wait for backend to be healthy
+    - name: Wait for frontend to be reachable
       uri:
-        url: "http://localhost:4001"
-        status_code: [200, 401]  # 401 is fine (means backend is responding, just needs auth)
-      register: backend_health
+        url: "http://localhost:5173"
+        status_code: [200, 404]
+      register: frontend_health
       retries: 30
       delay: 5
-      until: backend_health.status in [200, 401]
+      until: frontend_health.status in [200, 404]
 
     # ----------------------------------------------------------
     # 4. Nginx site config
@@ -96,23 +96,30 @@
               listen 80;
               server_name {{ app_domain }};
 
-              # Backend API + WebSocket
+              # Frontend (sin nginx propio — lo sirve este nginx global)
               location / {
-                  proxy_pass http://host.docker.internal:4001;
+                  proxy_pass http://frontend-react:5173;
                   proxy_set_header Host $host;
                   proxy_set_header X-Real-IP $remote_addr;
                   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                   proxy_set_header X-Forwarded-Proto $scheme;
+              }
 
-                  # WebSocket support
+              # Backend API (el /api se elimina; el backend NestJS no usa prefijo)
+              location /api/ {
+                  proxy_pass http://backend-nestjs:3000/;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+
+              # WebSocket (socket.io)
+              location /socket.io/ {
+                  proxy_pass http://backend-nestjs:3000;
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade $http_upgrade;
                   proxy_set_header Connection "upgrade";
-              }
-
-              # Grafana (sub-path)
-              location /grafana/ {
-                  proxy_pass http://host.docker.internal:4002/;
                   proxy_set_header Host $host;
                   proxy_set_header X-Real-IP $remote_addr;
                   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

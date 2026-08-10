@@ -24,8 +24,6 @@ services:
   telemetry-db-mysql:
     image: mysql:8.0
     container_name: db-mysql
-    ports:
-      - "3306:3306"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-telemetry_db}
@@ -44,8 +42,6 @@ services:
   telemetry-mongo-ragstore:
     image: mongo:7
     container_name: mongo-ragstore
-    ports:
-      - "27017:27017"
     environment:
       MONGO_INITDB_DATABASE: rag_knowledge
     volumes:
@@ -61,8 +57,6 @@ services:
   telemetry-redis-cache:
     image: redis:7-alpine
     container_name: redis-cache
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -79,7 +73,11 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_GRAFANA_URL: ${VITE_GRAFANA_URL:-http://localhost:3001/grafana/}
     container_name: frontend-react
+    ports:
+      - "5173:5173"
     networks:
       - telemetry-net
 
@@ -88,8 +86,6 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: backend-nestjs
-    ports:
-      - "4001:3000"
     env_file:
       - .env
     environment:
@@ -133,9 +129,12 @@ services:
     image: grafana/grafana:11.0.0
     container_name: dashboard-grafana
     ports:
-      - "4002:3000"
+      - "3001:3000"
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # Serve Grafana under /grafana/ so the dashboard header link works.
+      GF_SERVER_ROOT_URL: ${GF_SERVER_ROOT_URL:-http://localhost:3001/grafana/}
+      GF_SERVER_SERVE_FROM_SUB_PATH: "true"
       MYSQL_HOST: db-mysql
       MYSQL_PORT: 3306
       MYSQL_DATABASE: ${MYSQL_DATABASE:-telemetry_db}
@@ -163,4 +162,4 @@ volumes:
 
 networks:
   telemetry-net:
-    driver: bridge
+    name: telemetry-net
