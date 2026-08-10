@@ -1,16 +1,21 @@
 # Architecture
 
-## Container diagram (7)
+# Architecture
+
+## Container diagram (8)
 ```
-1. broker-mqtt       Eclipse Mosquitto              :1883   (auth per user + ACL per device)
-2. db-mysql          MySQL 8.0                      :3306   (relational source of truth)
-3. mongo-ragstore    MongoDB                        :27017  (RAG vectorized knowledge base)
-4. redis-cache       Redis                          :6379   (live motor+sensor snapshot)
-5. backend-nestjs    NestJS (API+WS+Auth+RAG+MQTT)  :3000
-6. dashboard-grafana Grafana                        :3001   (reads only MySQL)
-7. simulator-python  15 virtual "ESP32"              N/A     (MQTT pub/sub)
+1. broker-mqtt        Eclipse Mosquitto              :1883      (auth per user + ACL per device) — host port 1883
+2. db-mysql           MySQL 8.0                      :3306      (relational source of truth) — internal
+3. mongo-ragstore     MongoDB                        :27017     (RAG vectorized knowledge base) — internal
+4. redis-cache        Redis                          :6379      (live motor+sensor snapshot) — internal
+5. backend-nestjs     NestJS (API+WS+Auth+RAG+MQTT)  :3000      — internal, no host port
+6. dashboard-grafana  Grafana                        :3000      (reads only MySQL) — internal
+7. simulator-python   15 virtual "ESP32"              N/A        (MQTT pub/sub) — internal
+8. frontend-react     React (Vite preview, no nginx)  :5173      — host port 5173, routed by the global Nginx
 ```
-The React frontend is compiled and served as static files behind the global Nginx on the EC2 (outside this compose).
+Only the frontend (5173) and the broker (1883) are published to the host. Everything else is internal
+to `telemetry-net`. The frontend container serves the compiled SPA with `vite preview`; it has NO nginx of
+its own — the global Nginx on the EC2 routes the subdomain to it.
 
 ## Protocol combination (why, not just which)
 - **MQTT** device↔backend: asynchronous events from many emitters, with QoS and disconnect detection (LWT).

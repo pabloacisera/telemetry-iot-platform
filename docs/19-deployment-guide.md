@@ -15,15 +15,17 @@ what connects to what or which service needs to start first.
 ### Local development (what you'll use daily)
 
 ```bash
-docker compose up -d
-# Then open http://localhost:4001 (backend API)
-#            http://localhost:4002 (Grafana)
-# Frontend: cd frontend && npm run dev → http://localhost:5173
+docker compose up -d --build
+# Then open http://localhost:5173 (frontend)
+# API + WebSocket reach the backend through the Vite proxy (/api and /socket.io)
+# Grafana: internal-only (no host port) — port-forward if you need the UI
 ```
 
 In local mode:
-- All 7 infrastructure containers run in Docker.
-- The frontend runs outside Docker (Vite dev server with HMR) and proxies API calls to `localhost:4001`.
+- All 8 containers run in Docker, on the internal network `telemetry-net`.
+- Only the frontend (5173) and the MQTT broker (1883) are published to the host.
+- The frontend container serves the compiled SPA with `vite preview` and proxies `/api` and `/socket.io`
+  to `backend-nestjs` (see `frontend/vite.config.ts`).
 - You test everything in the browser against real data flowing from the simulator.
 - The simulator starts automatically and begins publishing telemetry within seconds.
 
@@ -34,10 +36,14 @@ cd ansible && ansible-playbook playbook.yml -i inventory.ini
 ```
 
 Ansible automates:
-1. Copy project to `/opt/telemetry-platform/` on the EC2.
-2. `docker compose up -d` (starts all 7 containers).
-3. Copy Nginx config to `conf.d/`.
+1. Copy project to `/opt/apps/telemetry/` on the EC2.
+2. `docker compose up -d --build` (starts all 8 containers).
+3. Connect the app network to the global Nginx and copy the Nginx conf to `conf.d/`.
 4. Validate + reload global Nginx (never restart).
+
+Production access: only `telemetry.artisandev.site` (→ frontend) is public; `/api` and `/socket.io` are
+routed by the global Nginx to the internal backend. MySQL, Mongo, Redis, Grafana and the broker (except 1883
+for the fault-injection script) stay internal.
 
 ## Why Ansible and not just `ssh + docker compose up`?
 
@@ -46,20 +52,23 @@ Ansible automates:
 - **Repeatable**: a new developer can deploy to a fresh EC2 without asking anyone.
 - **Demonstrable**: in an interview, you show the playbook and explain the automation instead of saying "I copied files manually."
 
-## Container architecture (7 services)
+## Container architecture (8 services)
 
 | Container | Image | Internal Port | Host Port | Depends On |
 |---|---|---|---|---|
-| `broker-mqtt` | eclipse-mosquitto:2 | 1883 | — | — |
+| `broker-mqtt` | eclipse-mosquitto:2 | 1883 | 1883 | — |
 | `db-mysql` | mysql:8.0 | 3306 | — | — |
 | `mongo-ragstore` | mongo:7 | 27017 | — | — |
 | `redis-cache` | redis:7-alpine | 6379 | — | — |
-| `backend-nestjs` | ./backend (custom) | 3000 | 4001 | mysql, mongo, redis, mqtt (healthy) |
-| `dashboard-grafana` | grafana/grafana:11.0 | 3000 | 4002 | mysql (healthy) |
+| `backend-nestjs` | ./backend (custom) | 3000 | — | mysql, mongo, redis, mqtt (healthy) |
+| `dashboard-grafana` | grafana/grafana:11.0 | 3000 | — | mysql (healthy) |
 | `simulator-python` | ./simulator (custom) | — | — | mqtt (healthy) |
+| `frontend-react` | ./frontend (custom, vite preview) | 5173 | 5173 | — |
 
-Only backend (4001) and Grafana (4002) are exposed to the host. Everything else is internal to
-`telemetry-net`.
+Only the frontend (5173) and the broker (1883) are exposed to the host. Everything else is internal to
+`telemetry-net`. The frontend container has NO nginx of its own — it serves the compiled SPA with
+`vite preview`, and the global Nginx routes the subdomain to it, proxying `/api` and `/socket.io` to the
+internal backend.
 
 ## Healthchecks (mandatory)
 
@@ -102,17 +111,17 @@ docker compose logs -f backend-nestjs
 #    - Backend is processing and persisting
 #    - Redis snapshot is being updated
 
-# 4. Test the API
-curl http://localhost:4001/motors  # (needs JWT, or temporarily disable auth for smoke test)
+# 4. Test the API (through the published frontend proxy)
+curl http://localhost:5173/api/motors  # (needs JWT, or temporarily disable auth for smoke test)
 
-# 5. Start frontend dev server
-cd frontend && npm run dev
-# Open http://localhost:5173 in browser
+# 5. Open the dashboard (the frontend container serves it)
+open http://localhost:5173
 
-# 6. Check Grafana
-open http://localhost:4002  # admin / (GRAFANA_ADMIN_PASSWORD from .env)
+# 6. Check Grafana (internal-only — port-forward if needed)
+docker run --rm -p 3000:3000 --network telemetry-net --name grafana-proxy alpine/socat TCP-LISTEN:3000,fork TCP:dashboard-grafana:3000
+# then open http://localhost:3000  # admin / (GRAFANA_ADMIN_PASSWORD from .env)
 
-# 7. Inject a fault to test the flow
+# 7. Inject a fault to test the flow (MQTT on localhost:1883)
 cd scripts && python3 inject_fault.py --motor 7 --type stuck --sensor vibration
 ```
 

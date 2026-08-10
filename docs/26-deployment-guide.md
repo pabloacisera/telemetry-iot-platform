@@ -188,10 +188,12 @@ services:
     networks:
       - mi-proyecto-net
 
-  # ─── Frontend ───
+  # ─── Frontend (sin nginx propio — lo sirve el nginx global) ───
   frontend:
     build: ./frontend
     restart: unless-stopped
+    ports:
+      - "5173:5173"   # solo si vas a alcanzarlo por el host; en prod lo rutiza el nginx global
     networks:
       - mi-proyecto-net
 
@@ -241,18 +243,18 @@ server {
     listen 80;
     server_name mi-proyecto.artisandevs.site;
 
-    # Frontend
+    # Frontend (el frontend NO tiene nginx propio; sirve con vite preview)
     location / {
-        proxy_pass http://frontend:80;
+        proxy_pass http://frontend:5173;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Backend API
+    # Backend API (el prefijo /api se elimina con proxy_pass que termina en /)
     location /api/ {
-        proxy_pass http://backend:3000/api/;
+        proxy_pass http://backend:3000/;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -261,7 +263,7 @@ server {
 
     # WebSocket (si tu app lo necesita)
     location /socket.io/ {
-        proxy_pass http://backend:3000/socket.io/;
+        proxy_pass http://backend:3000;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";

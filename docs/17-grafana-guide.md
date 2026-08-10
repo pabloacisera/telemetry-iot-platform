@@ -40,7 +40,7 @@ Grafana container boots
 | One "recent detail" panel queries `readings` (last 3 days) | For short-term forensic analysis when the operator needs per-reading granularity. |
 | MySQL datasource only | Grafana doesn't need Redis (live snapshot) or Mongo (RAG knowledge). It's a historical tool. |
 | Provisioning as code | Dashboards and datasource are files in the repo. `docker compose down/up` doesn't lose config. |
-| Port 3000 internal → 4002 host | Avoids collision with the NestJS backend (4001). Only accessible through Nginx. |
+| Port 3000 internal, NOT exposed to the host | Grafana lives inside `telemetry-net`. It is not published and has no public subdomain; access is only through the internal network (e.g. SSH tunnel). No collision because the NestJS backend is also internal. |
 | Read-only MySQL user | Grafana connects with a dedicated MySQL user that only has SELECT on the relevant tables. |
 
 ## What it visualizes
@@ -75,8 +75,7 @@ grafana/
 ```yaml
 dashboard-grafana:
   image: grafana/grafana:11.0.0
-  ports:
-    - "4002:3000"
+  # no host port — internal to telemetry-net only
   volumes:
     - ./grafana/provisioning:/etc/grafana/provisioning
     - ./grafana/grafana.ini:/etc/grafana/grafana.ini
@@ -94,11 +93,14 @@ dashboard-grafana:
 ```bash
 docker compose down && docker compose up -d
 # Wait for healthy
-curl -s http://localhost:4002/api/health | jq .
+# Grafana has no host port. For manual verification, port-forward via socat on the telemetry-net network:
+docker run --rm -p 3000:3000 --network telemetry-net --name grafana-proxy alpine/socat TCP-LISTEN:3000,fork TCP:dashboard-grafana:3000
+# then, in another terminal:
+curl -s http://localhost:3000/api/health | jq .
 # Check datasource exists
-curl -s http://localhost:4002/api/datasources | jq '.[].name'
+curl -s http://localhost:3000/api/datasources | jq '.[].name'
 # Check dashboards exist
-curl -s http://localhost:4002/api/search | jq '.[].title'
+curl -s http://localhost:3000/api/search | jq '.[].title'
 ```
 
 All three should return data without any manual UI interaction.

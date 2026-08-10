@@ -74,12 +74,17 @@ Barra de filtros sobre la tabla:
 - **Estado**: select `Todas | Activas | Resueltas`.
 - Botón **Limpiar filtros** que resetea todos los controles.
 
-Los filtros se aplican en frontend sobre los datos ya cargados (no requieren parámetros
-de query en el backend para esta primera versión).
+Los filtros se envían al backend como query params (`motorId`, `from`, `to`, `status`)
+y la paginación también es en servidor (`page`, `limit`). El rango **Desde** arranca por
+defecto en los últimos 7 días para que la vista inicial sea manejable; `to` se convierte
+a fin de día antes de enviarse.
 
 ### Paginación
 
-5 filas por página. Controles `◀ N / Total ▶`.
+25 filas por página (constante `PAGE_SIZE`). Controles `◀ N / Total ▶`. El total
+proviene de la respuesta del backend (`{ data, total, page, limit }`), no del tamaño del
+lote en memoria, así que el contador y las páginas son exactos incluso con miles de
+alertas. El listado se auto-refresca cada 30s para reflejar resoluciones automáticas.
 
 ### Backend — nuevo endpoint
 
@@ -156,11 +161,16 @@ Solo falta exponer la relación `resolvedByUser` en las queries de Prisma.
 
 ## Decisiones de diseño
 
-- Los filtros se aplican en frontend sobre un lote de hasta 200 alertas (suficiente
-  para la demo con 15 motores). Si el volumen crece, se puede migrar a filtros en
-  backend sin cambiar la interfaz.
+- La paginación y los filtros corren **en el backend** (`GET /alerts/history?page&limit&motorId&from&to&status`).
+  El frontend solo manda los parámetros y usa `total` de la respuesta. Esto evita traer
+  lotes enormes en memoria y mantiene el contador/paginado exactos con miles de alertas.
+- El volumen de alertas se controla en dos frentes:
+  1. **De-duplicación** en `StatusTransitionService.createAlert()` — no se crea una alerta
+     nueva si el motor ya tiene una abierta del mismo tipo.
+  2. **Retención** — las alertas resueltas de más de `ALERT_RETENTION_DAYS` (default 30) se
+     purgan por el job horario de `RetentionService` (ver `docs/20-retention-guide.md`).
 - `resolvedBy: null` con `resolvedAt` no null = resolución automática del sistema
-  (el motor hizo auto-restart o el propio pipeline resolvió la alerta).
+  (el motor hizo auto-restart, el sweep de 24h o el propio pipeline resolvió la alerta).
 - `resolvedBy > 0` con `resolvedAt` no null = resolución humana (operador/admin).
-- No se agrega botón "Resolver" en la tabla de historial — esa acción sigue siendo
-  exclusiva de la vista de detalle del motor y del panel de alertas activas.
+- La tabla de historial incluye un botón **Resolver** (visible para `operator` y `admin`,
+  dentro de `RoleGate`) que llama `PATCH /alerts/:id/resolve` y refresca la página.

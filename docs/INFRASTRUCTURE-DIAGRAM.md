@@ -17,8 +17,7 @@ graph TB
         subgraph "APLICACIONES"
             subgraph "App: Telemetry"
                 Telemetry_FE["📱 Frontend<br/>telemetry.artisandevs.site"]
-                Telemetry_BE["⚙️ Backend NestJS<br/>telemetry.artisandevs.site/api"]
-                Telemetry_GF["📊 Grafana<br/>telemetry.artisandevs.site/grafana"]
+                Telemetry_BE["⚙️ Backend NestJS<br/>/api + /socket.io (interno)"]
             end
 
             subgraph "App: Tienda"
@@ -56,7 +55,6 @@ graph TB
     %% Nginx a apps (routing por subdominio)
     NGINX -->|"telemetry.artisandevs.site"| Telemetry_FE
     NGINX -->|"telemetry.artisandevs.site/api"| Telemetry_BE
-    NGINX -->|"telemetry.artisandevs.site/grafana"| Telemetry_GF
     NGINX -->|"tienda.artisandevs.site"| Tienda_FE
     NGINX -->|"pagos.artisandevs.site"| Tienda_BE
     NGINX -->|"blog.artisandevs.site"| Blog_WP
@@ -73,7 +71,6 @@ graph TB
     CF_Tunnel -.->|"conectado a"| Net_Infra
     Telemetry_FE -.-> Net_Telemetry
     Telemetry_BE -.-> Net_Telemetry
-    Telemetry_GF -.-> Net_Telemetry
     Tienda_FE -.-> Net_Tienda
     Tienda_BE -.-> Net_Tienda
     Blog_WP -.-> Net_Blog
@@ -94,7 +91,7 @@ graph TB
     class CF,User cloud
     class CF_Tunnel tunnel
     class NGINX nginx
-    class Telemetry_FE,Telemetry_BE,Telemetry_GF,Tienda_FE,Tienda_BE,Blog_WP app
+    class Telemetry_FE,Telemetry_BE,Tienda_FE,Tienda_BE,Blog_WP app
     class MQTT,MySQL,MongoDB,Redis infra
     class Net_Infra,Net_Telemetry,Net_Tienda,Net_Blog network
 ```

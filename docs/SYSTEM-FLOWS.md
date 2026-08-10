@@ -31,13 +31,14 @@ ESP32/Simulador --MQTT--> Mosquitto --MQTT--> Backend NestJS --WebSocket--> Fron
 
 | Servicio | Puerto | Funcion |
 |----------|--------|---------|
-| `broker-mqtt` | 1883 | Mosquitto — broker MQTT con auth y ACL |
+| `broker-mqtt` | 1883 (host) | Mosquitto — broker MQTT con auth y ACL |
 | `simulator-python` | — | Simula 15+ dispositivos ESP32 |
-| `backend-nestjs` | 3000 | API REST + WebSocket + procesamiento |
-| `db-mysql` | 3306 | Base de datos principal (Prisma) |
-| `redis-cache` | 6379 | Snapshots en vivo, locks distribuidos |
-| `mongo-ragstore` | 27017 | Embeddings para asistente RAG |
-| `dashboard-grafana` | 3001 | Dashboards historicos |
+| `backend-nestjs` | 3000 (interno) | API REST + WebSocket + procesamiento |
+| `db-mysql` | 3306 (interno) | Base de datos principal (Prisma) |
+| `redis-cache` | 6379 (interno) | Snapshots en vivo, locks distribuidos |
+| `mongo-ragstore` | 27017 (interno) | Embeddings para asistente RAG |
+| `dashboard-grafana` | 3000 (interno) | Dashboards historicos |
+| `frontend-react` | 5173 (host) | React — servido por vite preview, rutizado por el nginx global |
 
 ### Red
 

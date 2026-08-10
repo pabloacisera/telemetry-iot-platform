@@ -31,7 +31,7 @@ Built as a full-stack portfolio project targeting a mid/senior backend or fullst
 | Observability | Grafana | Provisioned as code — historical aggregated visualization |
 | LLM | Groq (`llama-3.3-70b-versatile`) | Free, fast, no LangChain wrapper needed for a single orchestrated call |
 | Simulator | Python | 15 virtual ESP32s — realistic traffic generator with fault injection |
-| Infra | Docker Compose + Ansible | 7 containers, one command to run locally or deploy to EC2 |
+| Infra | Docker Compose + Ansible | 8 containers, one command to run locally or deploy to EC2 |
 
 ---
 
@@ -44,7 +44,7 @@ Simulated ESP32s (Python)
   broker-mqtt (Mosquitto)
         │
         ▼
-  backend-nestjs (:3000)
+  backend-nestjs (:3000, internal)
   ├── TelemetryConsumerService   → validates, evaluates state machine
   ├── TelemetryEvaluationService → thresholds + sliding window + alarm logic
   ├── StatusTransitionService    → motor/sensor state transitions + audit log
@@ -59,8 +59,8 @@ Simulated ESP32s (Python)
         ├── redis-cache   (live snapshot — current value + sensor status)
         │
         ▼
-  dashboard-grafana (:3001)  ← reads MySQL only
-  React frontend             ← REST + WebSocket
+  dashboard-grafana (internal, reads MySQL only)
+  frontend-react (:5173)  ← REST + WebSocket (routed by the global Nginx)
 ```
 
 **Protocol split:**
@@ -126,8 +126,12 @@ docker compose up --build
 | Service | URL |
 |---|---|
 | React dashboard | http://localhost:5173 |
-| Backend API | http://localhost:3000 |
-| Grafana | http://localhost:3001 (admin / configured password) |
+| Backend API | http://localhost:5173/api (proxied by Vite/global Nginx to the internal backend) |
+| MQTT broker | localhost:1883 |
+| Grafana | internal (not exposed to the host) |
+
+Only the frontend (5173) and the MQTT broker (1883) are published to the host.
+The backend, MySQL, Mongo, Redis and Grafana are internal to the Docker network `telemetry-net`.
 
 Default credentials (seed): `admin@telemetry.com` / `admin123` (admin), `operator@telemetry.com` / `op123` (operator)
 

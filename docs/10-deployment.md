@@ -1,52 +1,52 @@
 # Deployment
 
 ## Port mapping (convention)
-- `backend-nestjs` listens internally on **port 3000** (inside the container, always).
-- In `docker-compose.yml` it maps **4001:3000** (4001 is the host port assigned to this project on the EC2).
-- The global Nginx points to `host.docker.internal:4001`.
-- Other services (MySQL, Mongo, Redis, Mosquitto, Grafana) use their standard ports internally and
-  are NOT exposed to the host (only accessible within the Docker network `telemetry-net`).
-- Grafana maps **4002:3000** (for direct access during development, not exposed to internet in production).
+- Only the **frontend (5173)** and the **MQTT broker (1883)** are published to the host.
+- `backend-nestjs` listens internally on **port 3000** (no host port).
+- Other services (MySQL, Mongo, Redis, Grafana) are **NOT exposed to the host** — only reachable within the
+  Docker network `telemetry-net`.
+- The global Nginx (in `/opt/infra`, container `nginx-global`) proxies the subdomain to the frontend
+  container and routes `/api/` and `/socket.io/` to `backend-nestjs`.
+
+## Routing (nginx-global, telemetry.conf)
+- `telemetry.artisandevs.site` → `frontend-react:5173` (SPA served by `vite preview`, no nginx inside the container).
+- `telemetry.artisandevs.site/api/*` → `backend-nestjs:3000` (the `/api` prefix is stripped; the NestJS backend
+  has no global prefix — routes live at `/auth`, `/motors`, etc.).
+- `telemetry.artisandevs.site/socket.io/*` → `backend-nestjs:3000` with WebSocket upgrade headers.
 
 ## Complete traffic route
 ```
-Web Client → https://app1.yourdomain.com
+Web Client → https://telemetry.artisandevs.site
   → Cloudflare network (resolves the CNAME to the tunnel)
-  → cloudflared daemon on EC2 (config.yml → forwards to localhost:81)
-  → Global Nginx at /home/ec2-user/global/nginx (port 81 → evaluates conf.d/ → matches by server_name)
-  → App container at /opt/<project-name> (internal port, e.g. 4001)
+  → cloudflared daemon on EC2 (config.yml → forwards to localhost:80)
+  → Global Nginx at /opt/infra (port 80 → evaluates conf.d/ → matches by server_name)
+  → App container (frontend-react:5173; /api/ and /socket.io/ to backend-nestjs:3000)
 ```
 
 ## Manual deployment, step by step
-1. Copy the project to `/opt/<project-name>`.
-2. `docker compose up -d` (starts the 7 containers in `telemetry-net`).
-3. Create `/home/ec2-user/global/nginx/conf.d/<app>.conf`:
-```nginx
-server {
-    listen 80;
-    server_name app1.yourdomain.com;
-    location / {
-        proxy_pass http://host.docker.internal:4001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-4. Validate and reload global Nginx WITHOUT restarting it (doesn't cut other apps):
+1. Copy the project to `/opt/apps/telemetry`.
+2. No need to create `telemetry-net` manually — `docker compose` auto-creates it
+   because the compose file defines `networks: telemetry-net: name: telemetry-net`.
+   (Still valid as a one-time manual step: `docker network create telemetry-net`.)
+3. `docker compose up -d --build` (starts the 8 containers in `telemetry-net`).
+4. Connect the network to the global Nginx: `docker network connect telemetry-net nginx-global`.
+5. Create `/opt/infra/conf.d/telemetry.conf` (see `ansible/files/nginx/telemetry.conf` for the current version).
+6. Validate and reload global Nginx WITHOUT restarting it (doesn't cut other apps):
 ```bash
 docker exec nginx-global nginx -t
 docker exec nginx-global nginx -s reload
 ```
 
-## Deployment with Ansible (optional)
-`ansible/playbook.yml` automates the same 4 steps: copy project, bring up compose, copy Nginx conf,
-validate+reload. See tasks in `kiro/specs/08-deployment-infra/tasks.md`.
+## Deployment with Ansible
+`ansible/deploy-app.yml` automates the same steps: create `/opt/apps/<app>` + network, synchronize files,
+copy `.env`, connect the network to `nginx-global`, copy the nginx conf, validate + reload, and bring up
+compose. See `ansible/README.md`. Migrations are handled at container startup by the backend
+(`prisma migrate deploy` in `backend/Dockerfile`) — do not use `run_migrations=true` for this app.
 
 ## Fixed rules
 - Never `docker compose restart` the global Nginx.
-- Internal ports of the 7 containers are never exposed directly to internet, only via global Nginx + tunnel.
+- Internal ports of the containers are never exposed directly to internet, only via global Nginx + tunnel.
+  Only exceptions: frontend 5173 (local dev access) and broker 1883 (external fault-injection script).
 - Project-specific `.env`, never shared with other apps on the same EC2.
 - Mandatory healthchecks on `db-mysql`, `mongo-ragstore`, `redis-cache`, `broker-mqtt`.
 - `backend-nestjs` and `simulator-python` start only when their dependencies are healthy
