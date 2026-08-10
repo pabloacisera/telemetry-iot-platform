@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch, RootState } from '../../store';
 import { askRag } from '../../store/rag.slice';
 import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface RagQueryBoxProps {
   motorId?: number;
@@ -34,7 +35,7 @@ export function RagQueryBox({ motorId }: RagQueryBoxProps) {
             <strong>{msg.role === 'user' ? 'Tú' : 'Asistente'}:</strong>
             {msg.role === 'assistant' ? (
               <div className="rag-markdown">
-                <Markdown>{msg.content}</Markdown>
+                <Markdown remarkPlugins={[remarkGfm]}>{msg.content}</Markdown>
               </div>
             ) : (
               <p>{msg.content}</p>

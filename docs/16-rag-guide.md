@@ -114,6 +114,13 @@ npm run seed:embeddings   # loads knowledge fragments into Mongo
 npm run start:dev         # RAG module loads with the rest of the backend
 ```
 
+## Markdown rendering in the frontend
+
+Assistant responses are rendered with `react-markdown` in `RagQueryBox.tsx`, with the GFM
+extension enabled (`remark-gfm@^4`) so **tables and lists** render properly (GFM pipe tables
+were previously shown as raw text). `.rag-markdown` has `overflow-x: auto` so wide tables
+scroll horizontally instead of overflowing the card.
+
 ## What this does NOT do
 
 - Does not replace Grafana for historical analysis (explicitly redirects there).
