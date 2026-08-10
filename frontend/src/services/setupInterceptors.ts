@@ -1,6 +1,7 @@
 import type { Store } from '@reduxjs/toolkit';
 import { api } from './api';
 import { refreshToken, logout } from '../store/auth.slice';
+import type { AppDispatch } from '../store';
 
 /**
  * Attaches request/response interceptors to the api instance.
@@ -33,7 +34,7 @@ export function setupInterceptors(store: Store): void {
         originalRequest._retry = true;
 
         try {
-          await (store.dispatch as (action: any) => any)(refreshToken()).unwrap();
+          await (store.dispatch as AppDispatch)(refreshToken()).unwrap();
           const state = store.getState();
           originalRequest.headers.Authorization = `Bearer ${state.auth.accessToken}`;
           return api(originalRequest);

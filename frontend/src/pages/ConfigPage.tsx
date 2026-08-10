@@ -5,6 +5,7 @@ import { useSelector, useDispatch } from 'react-redux';
 import type { RootState, AppDispatch } from '../store';
 import { invalidateMotors } from '../store/motors.slice';
 import { api } from '../services/api';
+import type { AxiosError } from 'axios';
 import { StatusBadge } from '../components/motors/StatusBadge';
 
 interface Motor {
@@ -121,7 +122,10 @@ export function ConfigPage() {
     }
   }, []);
 
-  useEffect(() => { fetchAll(); }, [fetchAll]);
+  useEffect(() => {
+    const load = async () => { await fetchAll(); };
+    void load();
+  }, [fetchAll]);
 
   const sortedMotors = [...motors].sort((a, b) =>
     (STATUS_PRIORITY[a.status] ?? 99) - (STATUS_PRIORITY[b.status] ?? 99)
@@ -668,7 +672,13 @@ function AlertsTab({ motors, alertConfig, overrides, onEditOverride, onDeleteOve
   // Estado para el modal de nueva regla personalizada
   const [showNewOverride, setShowNewOverride] = useState(false);
 
-  useEffect(() => { setEditForm(alertConfig); }, [alertConfig]);
+  // Mantiene editForm sincronizado cuando cambia alertConfig (patrón
+  // "adjust state during render" en lugar de useEffect + setState).
+  const [prevAlertConfig, setPrevAlertConfig] = useState(alertConfig);
+  if (prevAlertConfig !== alertConfig) {
+    setPrevAlertConfig(alertConfig);
+    setEditForm(alertConfig);
+  }
 
   if (!editForm) return null;
 
@@ -892,8 +902,8 @@ function CreateMotorForm({ onCreated, onCancel }: {
         connectionType: form.connectionType,
       });
       onCreated({ mqtt: res.data.mqtt });
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Error al crear motor');
+    } catch (err) {
+      setError((err as AxiosError<{ message?: string }>).response?.data?.message || 'Error al crear motor');
     } finally {
       setSubmitting(false);
     }
@@ -939,8 +949,8 @@ function EditMotorModal({ motor, onSaved, onCancel }: {
     try {
       await api.patch(`/config/motors/${motor.id}`, form);
       onSaved();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Error al actualizar');
+    } catch (err) {
+      setError((err as AxiosError<{ message?: string }>).response?.data?.message || 'Error al actualizar');
     } finally {
       setSubmitting(false);
     }
@@ -1001,8 +1011,8 @@ function EditThresholdsModal({ motorId, sensor, standard, extraHeader, onSaved, 
         healthyMax: parseFloat(form.healthyMax), warningMax: parseFloat(form.warningMax), criticalMax: parseFloat(form.criticalMax),
       });
       onSaved();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Error al actualizar umbrales');
+    } catch (err) {
+      setError((err as AxiosError<{ message?: string }>).response?.data?.message || 'Error al actualizar umbrales');
     } finally {
       setSubmitting(false);
       setConfirmOverride(false);
@@ -1077,8 +1087,8 @@ function EditOverrideModal({ motorId, existingOverride, motors, existingOverride
     try {
       await api.post('/config/alerts/overrides', { motorId: targetMotorId, ...form });
       onSaved();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Error al guardar override');
+    } catch (err) {
+      setError((err as AxiosError<{ message?: string }>).response?.data?.message || 'Error al guardar override');
     } finally {
       setSubmitting(false);
     }

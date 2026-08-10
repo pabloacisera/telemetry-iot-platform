@@ -333,14 +333,25 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 }
 .alert-history-clear { align-self: flex-end; }
 
-/* Wrapper */
+/* Wrapper — flex column; la tabla tiene su propio scroll (la paginación queda fija) */
 .alert-history-wrapper {
   display: flex; flex-direction: column; gap: 1rem;
-  max-height: calc(100vh - 220px); overflow-y: auto;
 }
 
-/* Table scroll container — horizontal scroll on small screens */
-.alert-history-table-scroll { overflow-x: auto; }
+/* Table scroll container — scroll vertical + horizontal con header sticky */
+.alert-history-table-scroll {
+  overflow: auto;
+  max-height: calc(100vh - 300px);
+  border-radius: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.alert-history-table-scroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.alert-history-table-scroll::-webkit-scrollbar-track { background: transparent; }
+.alert-history-table-scroll::-webkit-scrollbar-thumb {
+  background: var(--border); border-radius: 5px;
+}
+.alert-history-table-scroll::-webkit-scrollbar-thumb:hover { background: var(--gray); }
 
 /* Table */
 .alert-history-table {
@@ -353,6 +364,8 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
   background: var(--bg); border-bottom: 1px solid var(--border);
   font-weight: 600; color: var(--gray); font-size: 0.75rem;
   text-transform: uppercase; letter-spacing: 0.03em;
+  position: sticky; top: 0; z-index: 2;
+  box-shadow: 0 1px 0 var(--border);
 }
 .alert-history-table td {
   padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border);
@@ -381,6 +394,16 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
 .alert-history-badge--resolved {
   background: rgba(34,197,94,0.12); color: var(--green);
 }
+.alert-history-badge + .btn-resolve { margin-left: 0.5rem; }
+.btn-resolve {
+  display: inline-flex; align-items: center; gap: 0.35rem;
+  padding: 0.25rem 0.6rem; border: 1px solid var(--border);
+  border-radius: 6px; background: transparent; color: var(--green);
+  font-size: 0.75rem; font-weight: 600; cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.btn-resolve:hover:not(:disabled) { background: rgba(34,197,94,0.12); }
+.btn-resolve:disabled { opacity: 0.5; cursor: default; }
 
 /* ── Config Tab Wrapper (same visual as dashboard-grid-container) ── */
 .config-tab-wrapper {

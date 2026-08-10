@@ -7,7 +7,7 @@ import {
   fetchMotors,
   restartProgressUpdate,
 } from './motors.slice';
-import { alertReceived } from './alerts.slice';
+import { alertReceived, alertResolved, fetchActiveAlerts } from './alerts.slice';
 
 /** WebSocket telemetry event payload. */
 interface TelemetryEvent {
@@ -59,13 +59,20 @@ interface RestartProgressEvent {
 export const socketMiddleware: Middleware = (storeAPI) => {
   let socket: Socket | null = null;
 
+  // Dispara thunks (createAsyncThunk) cuyo tipo no encaja en Dispatch<UnknownAction>.
+  const dispatchThunk = storeAPI.dispatch as unknown as (action: unknown) => unknown;
+
   function connectSocket(): void {
     if (socket?.connected) return;
 
     const state = storeAPI.getState();
     const token = state.auth.accessToken;
 
-    socket = io(import.meta.env.VITE_WS_URL || 'http://localhost:3000', {
+    // NOTE: io() must NOT receive '/socket.io' as the URI — in socket.io v4 a
+    // path in the URI is treated as the NAMESPACE (=> "Invalid namespace").
+    // Pass the origin (or undefined) and set the server path explicitly.
+    socket = io(import.meta.env.VITE_WS_URL, {
+      path: '/socket.io',
       auth: { token },
       reconnection: true,
       reconnectionDelay: 1000,
@@ -74,6 +81,8 @@ export const socketMiddleware: Middleware = (storeAPI) => {
 
     socket.on('connect', () => {
       console.log('[WS] Connected');
+      // Seed the alert banner with currently active alerts after (re)connect.
+      dispatchThunk(fetchActiveAlerts());
     });
 
     socket.on('disconnect', () => {
@@ -82,7 +91,7 @@ export const socketMiddleware: Middleware = (storeAPI) => {
 
     socket.on('reconnect', () => {
       console.log('[WS] Reconnected, refetching snapshot');
-      storeAPI.dispatch(fetchMotors() as any);
+      dispatchThunk(fetchMotors());
     });
 
     socket.on('telemetry', (data: TelemetryEvent) => {
@@ -107,6 +116,10 @@ export const socketMiddleware: Middleware = (storeAPI) => {
 
     socket.on('alert', (data: AlertEvent) => {
       storeAPI.dispatch(alertReceived(data));
+    });
+
+    socket.on('alert-resolved', (data: { id: number; motorId: number }) => {
+      storeAPI.dispatch(alertResolved(data.id));
     });
 
     socket.on('restart-progress', (data: RestartProgressEvent) => {
@@ -140,12 +153,12 @@ export const socketMiddleware: Middleware = (storeAPI) => {
 
     // Room management for motor detail page
     if (type === 'socket/joinMotor' && socket) {
-      const motorId = (action as any).payload;
+      const motorId = (action as { payload: number }).payload;
       socket.emit('join-motor', motorId);
     }
 
     if (type === 'socket/leaveMotor' && socket) {
-      const motorId = (action as any).payload;
+      const motorId = (action as { payload: number }).payload;
       socket.emit('leave-motor', motorId);
     }
 

@@ -12,6 +12,12 @@ import { RoleGate } from '../components/routes/RoleGate';
  * Layout: header with action buttons, then grid in a differentiated container.
  * AlertBanner renders as floating toasts (position: fixed), outside the flow.
  */
+/**
+ * Grafana quick-access link in the header. The URL is injected at build time
+ * via the VITE_GRAFANA_URL build arg (defaults to http://localhost:3001/grafana/).
+ */
+const grafanaUrl = import.meta.env.VITE_GRAFANA_URL as string | undefined;
+
 export function DashboardPage() {
   const dispatch = useDispatch<AppDispatch>();
   const { initialized } = useSelector((state: RootState) => state.motors);
@@ -30,14 +36,16 @@ export function DashboardPage() {
       <div className="dashboard-header">
         <h1>Vista General de Planta</h1>
         <div className="dashboard-links">
-          <a
-            href="http://localhost:4002/grafana/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="grafana-link"
-          >
-            <i className="fa-solid fa-chart-line" aria-hidden="true" /> Grafana
-          </a>
+          {grafanaUrl && (
+            <a
+              href={grafanaUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="grafana-link"
+            >
+              <i className="fa-solid fa-chart-line" aria-hidden="true" /> Grafana
+            </a>
+          )}
           <Link to="/alertas" className="ref-link">
             <i className="fa-solid fa-bell" aria-hidden="true" /> Alertas
           </Link>

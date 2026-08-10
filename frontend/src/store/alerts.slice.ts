@@ -1,7 +1,8 @@
-import { createSlice } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
+import { api } from '../services/api';
 
-interface Alert {
+export interface Alert {
   id: number;
   motorId: number;
   type: string;
@@ -17,6 +18,12 @@ interface AlertsState {
 const initialState: AlertsState = {
   active: [],
 };
+
+/** Fetch currently active (unresolved) alerts from REST — seeds the banner. */
+export const fetchActiveAlerts = createAsyncThunk('alerts/fetchActive', async () => {
+  const response = await api.get<Alert[]>('/alerts');
+  return response.data;
+});
 
 /**
  * Alerts slice — maintains the list of active (unresolved) alerts.
@@ -46,6 +53,11 @@ export const alertsSlice = createSlice({
     setAlerts(state, action: PayloadAction<Alert[]>) {
       state.active = action.payload;
     },
+  },
+  extraReducers: (builder) => {
+    builder.addCase(fetchActiveAlerts.fulfilled, (state, action) => {
+      state.active = action.payload;
+    });
   },
 });
 
