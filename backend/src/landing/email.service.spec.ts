@@ -101,4 +101,44 @@ describe('EmailService', () => {
 
     expect(sent).toBe(false);
   });
+
+  it('sends the password reset email with the reset link and returns true', async () => {
+    mockSend.mockResolvedValue({ data: { id: 'mail-2' }, error: null });
+    const service = new EmailService(
+      makeConfig({
+        RESEND_API_KEY: 're_test',
+        RESEND_FROM: 'no-reply@telemetry.app',
+        LANDING_APP_URL: 'http://app.test',
+      }),
+    );
+
+    const sent = await service.sendPasswordResetEmail(
+      'user@example.com',
+      'http://app.test/reset-password?token=abc-123',
+    );
+
+    expect(sent).toBe(true);
+    const payload = emailPayload(mockSend.mock.calls as unknown[][]);
+    expect(payload.from).toBe('no-reply@telemetry.app');
+    expect(payload.to).toBe('user@example.com');
+    expect(payload.subject).toContain('Restablecé tu contraseña');
+    expect(payload.html).toContain(
+      'http://app.test/reset-password?token=abc-123',
+    );
+    expect(payload.html).toContain('Restablecer contraseña');
+    expect(payload.html).toContain('uso único');
+    expect(payload.html).toContain('30 minutos');
+  });
+
+  it('returns false for the reset email when Resend is not configured', async () => {
+    const service = new EmailService(makeConfig({}));
+
+    const sent = await service.sendPasswordResetEmail(
+      'user@example.com',
+      'http://app.test/reset-password?token=abc',
+    );
+
+    expect(sent).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
 });

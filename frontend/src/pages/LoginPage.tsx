@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
+import { Link } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import type { AppDispatch, RootState } from '../store';
 import { login } from '../store/auth.slice';
@@ -62,6 +63,9 @@ export function LoginPage() {
           <button type="submit" disabled={loading}>
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
+          <p className="auth-link">
+            <Link to="/forgot-password">¿Olvidaste tu contraseña?</Link>
+          </p>
           {error && <p className="error" role="alert">{error}</p>}
         </form>
       </div>

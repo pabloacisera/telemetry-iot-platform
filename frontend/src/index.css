@@ -68,6 +68,24 @@ h1, h2, h3 { color: var(--text-heading); margin: 0 0 0.5rem; }
   background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); color: var(--red);
   font-size: 0.875rem; text-align: center;
 }
+.login-hint {
+  margin: 0.5rem 0 0; font-size: 0.875rem; color: var(--gray); text-align: center;
+}
+.auth-link { margin: 1rem 0 0; text-align: center; font-size: 0.875rem; }
+.auth-link a { color: var(--accent); text-decoration: none; font-weight: 500; }
+.auth-link a:hover { text-decoration: underline; }
+.reset-success, .reset-error {
+  margin-top: 1.5rem; padding: 0.875rem 1rem; border-radius: 8px; font-size: 0.875rem;
+}
+.reset-success {
+  background: rgba(34,197,94,0.1); border: 1px solid rgba(34,197,94,0.3); color: var(--text);
+}
+.reset-error {
+  background: rgba(220,38,38,0.1); border: 1px solid rgba(220,38,38,0.3); color: var(--red);
+}
+.reset-success p, .reset-error p { margin: 0 0 0.5rem; }
+.reset-success p:last-child, .reset-error p:last-child { margin-bottom: 0; }
+.reset-success-note { color: var(--gray); }
 
 .dashboard { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
 

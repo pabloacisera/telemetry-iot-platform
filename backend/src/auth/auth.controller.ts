@@ -11,6 +11,8 @@ import {
 import type { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
+import { RequestPasswordResetDto } from './dto/request-password-reset.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 
 /**
  * Auth controller — login, refresh, logout.
@@ -74,6 +76,28 @@ export class AuthController {
 
     res.clearCookie('refresh_token');
     return { message: 'Logged out' };
+  }
+
+  /**
+   * Request a password reset link.
+   * Always returns 200 with a generic message (no account enumeration).
+   */
+  @Post('password/forgot')
+  @HttpCode(HttpStatus.OK)
+  async requestPasswordReset(@Body() dto: RequestPasswordResetDto) {
+    await this.authService.requestPasswordReset(dto.email);
+    return {
+      message:
+        'Si el correo existe, recibirás un enlace para restablecer tu contraseña.',
+    };
+  }
+
+  /** Set a new password using a single-use reset token. */
+  @Post('password/reset')
+  @HttpCode(HttpStatus.OK)
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto.token, dto.newPassword);
+    return { message: 'Contraseña actualizada. Ya podés iniciar sesión.' };
   }
 
   /** Set the refresh token as a secure httpOnly cookie. */

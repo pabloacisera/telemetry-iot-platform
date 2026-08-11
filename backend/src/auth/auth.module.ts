@@ -7,9 +7,11 @@ import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './jwt.strategy';
 import { RolesGuard } from './roles.guard';
+import { LandingModule } from '../landing/landing.module';
 
 @Module({
   imports: [
+    LandingModule,
     PassportModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],

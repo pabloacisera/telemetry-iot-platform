@@ -10,6 +10,8 @@ import { ReferencePage } from './pages/ReferencePage';
 import { ConfigPage } from './pages/ConfigPage';
 import { AlertHistoryPage } from './pages/AlertHistoryPage';
 import { LandingPage } from './pages/LandingPage';
+import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
+import { ResetPasswordPage } from './pages/ResetPasswordPage';
 import { ProtectedRoute } from './components/routes/ProtectedRoute';
 import { AdminRoute } from './components/routes/AdminRoute';
 
@@ -39,6 +41,8 @@ function App() {
           path="/login"
           element={user ? <Navigate to="/dashboard" /> : <LoginPage />}
         />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route element={<ProtectedRoute />}>
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/motors/:id" element={<MotorDetailPage />} />

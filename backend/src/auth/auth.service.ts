@@ -1,8 +1,10 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma';
+import { EmailService } from '../landing/email.service';
 
 /**
  * Authentication service — login, token rotation, and logout.
@@ -23,7 +25,12 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly emailService: EmailService,
+    private readonly configService: ConfigService,
   ) {}
+
+  /** Validity window for a password reset token. */
+  private readonly resetTokenTtlMs = 30 * 60 * 1000; // 30 minutes
 
   /** Validate credentials and issue tokens. */
   async login(
@@ -214,6 +221,94 @@ export class AuthService {
     });
 
     return `${jti}:${secret}`;
+  }
+
+  /**
+   * Create a password reset token and email a single-use link to the user.
+   * Always resolves successfully regardless of whether the email exists, so
+   * callers cannot use this endpoint to enumerate accounts. Returns void to
+   * avoid revealing anything about the outcome.
+   */
+  async requestPasswordReset(email: string): Promise<void> {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      this.logger.log(`Password reset requested for unknown email ${email}`);
+      return;
+    }
+
+    const rawToken = randomUUID();
+    const tokenHash = await bcrypt.hash(rawToken, 10);
+    const expiresAt = new Date(Date.now() + this.resetTokenTtlMs);
+
+    await this.prisma.passwordResetToken.create({
+      data: { userId: user.id, tokenHash, expiresAt },
+    });
+
+    const appUrl = this.configService.get<string>(
+      'LANDING_APP_URL',
+      'http://localhost:5173',
+    );
+    const resetUrl = `${appUrl}/reset-password?token=${rawToken}`;
+
+    const sent = await this.emailService.sendPasswordResetEmail(
+      user.email,
+      resetUrl,
+    );
+    if (sent) {
+      this.logger.log(`Password reset email sent to ${email}`);
+    }
+  }
+
+  /**
+   * Validate a reset token and set a new password for its user.
+   * Invalid, expired or already-used tokens are rejected; on success the token
+   * is marked as used and all refresh tokens for the user are revoked so the
+   * old password can no longer be used on active sessions.
+   */
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const records = await this.prisma.passwordResetToken.findMany({
+      where: { usedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    let matchedRecord: (typeof records)[number] | null = null;
+    for (const record of records) {
+      if (await bcrypt.compare(token, record.tokenHash)) {
+        matchedRecord = record;
+        break;
+      }
+    }
+
+    if (!matchedRecord) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: matchedRecord.userId },
+    });
+    if (!user) {
+      throw new UnauthorizedException('Invalid or expired reset token');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 10);
+
+    await this.prisma.passwordResetToken.update({
+      where: { id: matchedRecord.id },
+      data: { usedAt: new Date() },
+    });
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash },
+    });
+
+    // Invalidate all active sessions so the old password is fully revoked.
+    await this.prisma.refreshToken.updateMany({
+      where: { userId: user.id, revoked: false },
+      data: { revoked: true },
+    });
+
+    this.logger.log(`Password reset completed for user ${user.email}`);
   }
 
   /** Parse a token into jti and secret. Handles both new ("jti:secret") and legacy (plain UUID) formats. */
