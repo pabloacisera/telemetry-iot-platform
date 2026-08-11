@@ -307,7 +307,7 @@ function MotorsTab({ motors, onEdit, onDelete, onCreate, onEditThresholds }: {
               <strong className="config-motor-code">{motor.code}</strong>
               <span className="config-motor-name">{motor.name}</span>
               <span className="config-motor-location">{motor.location || '—'}</span>
-              <span className="config-motor-conn">{motor.connectionType}</span>
+              <span className="config-motor-conn">{motor.connectionType === 'lan' ? 'LAN' : 'WiFi'}</span>
               <div
                 className="config-motor-actions"
                 onClick={(e) => e.stopPropagation()}
@@ -919,7 +919,7 @@ function CreateMotorForm({ onCreated, onCancel }: {
           <label>Nombre<input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Motor Bomba" required /></label>
           <label>Ubicacion<input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Planta 2" /></label>
           <label>Corriente nominal (A)<input type="number" step="0.1" min="0.1" value={form.ratedCurrentA} onChange={(e) => setForm({ ...form, ratedCurrentA: e.target.value })} required /></label>
-          <label>Conexion<select value={form.connectionType} onChange={(e) => setForm({ ...form, connectionType: e.target.value })}>
+          <label>Conexión motor/MCU<select value={form.connectionType} onChange={(e) => setForm({ ...form, connectionType: e.target.value })}>
             <option value="wifi">WiFi</option>
             <option value="lan">LAN (Ethernet)</option>
           </select></label>
@@ -964,7 +964,7 @@ function EditMotorModal({ motor, onSaved, onCancel }: {
         <div className="config-form-grid">
           <label>Nombre<input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required /></label>
           <label>Ubicacion<input type="text" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} /></label>
-          <label>Conexion<select value={form.connectionType} onChange={(e) => setForm({ ...form, connectionType: e.target.value })}>
+          <label>Conexión motor/MCU<select value={form.connectionType} onChange={(e) => setForm({ ...form, connectionType: e.target.value })}>
             <option value="wifi">WiFi</option>
             <option value="lan">LAN (Ethernet)</option>
           </select></label>
