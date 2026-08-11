@@ -6,6 +6,7 @@ import { fetchMotors } from '../store/motors.slice';
 import { MotorGrid } from '../components/motors/MotorGrid';
 import { AlertBanner } from '../components/alerts/AlertBanner';
 import { RoleGate } from '../components/routes/RoleGate';
+import { UserMenu } from '../components/UserMenu';
 
 /**
  * Main dashboard page — shows the grid of 15 motors.
@@ -58,6 +59,7 @@ export function DashboardPage() {
             </Link>
           </RoleGate>
         </div>
+        <UserMenu />
       </div>
 
       <div className="dashboard-grid-container">

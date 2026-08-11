@@ -68,6 +68,21 @@ export const refreshToken = createAsyncThunk(
 );
 
 /**
+ * Logout thunk — revokes the refresh token server-side, then clears local state.
+ * Local state is cleared even if the request fails (best-effort).
+ */
+export const logoutUser = createAsyncThunk(
+  'auth/logoutUser',
+  async (_, { dispatch }) => {
+    try {
+      await api.post('/auth/logout');
+    } finally {
+      dispatch(logout());
+    }
+  },
+);
+
+/**
  * Auth slice — manages user session state.
  * Access token lives in Redux memory (never localStorage).
  * Refresh token is an httpOnly cookie (browser handles it).
