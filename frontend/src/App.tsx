@@ -11,6 +11,7 @@ import { ConfigPage } from './pages/ConfigPage';
 import { AlertHistoryPage } from './pages/AlertHistoryPage';
 import { LandingPage } from './pages/LandingPage';
 import { ProtectedRoute } from './components/routes/ProtectedRoute';
+import { AdminRoute } from './components/routes/AdminRoute';
 
 /**
  * Root application component.
@@ -43,7 +44,9 @@ function App() {
           <Route path="/motors/:id" element={<MotorDetailPage />} />
           <Route path="/referencia" element={<ReferencePage />} />
           <Route path="/alertas" element={<AlertHistoryPage />} />
-          <Route path="/config" element={<ConfigPage />} />
+          <Route element={<AdminRoute />}>
+            <Route path="/config" element={<ConfigPage />} />
+          </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
