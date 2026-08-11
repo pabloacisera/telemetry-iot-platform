@@ -70,26 +70,42 @@ export class MotorConfigService {
       });
     }
 
-    return standards.map((std) => {
-      if (std.sensorType === 'current') {
-        // Current thresholds are multipliers of rated current
-        return {
-          sensorType: std.sensorType,
-          healthyMax:
-            Math.round(ratedCurrentA * std.defaultHealthyMax * 100) / 100,
-          warningMax:
-            Math.round(ratedCurrentA * std.defaultWarningMax * 100) / 100,
-          criticalMax:
-            Math.round(ratedCurrentA * std.defaultCriticalMax * 100) / 100,
-        };
-      }
+    return standards.map((std) => ({
+      sensorType: std.sensorType,
+      ...this.computeStandardThresholds(std.sensorType, ratedCurrentA, std),
+    }));
+  }
+
+  /**
+   * Compute the effective default thresholds for a sensor type given the
+   * motor's rated current. Current thresholds are multipliers of rated
+   * current (per sensor_standards); other sensor types use the standard
+   * values directly. Mirrors the logic used when creating a new motor.
+   */
+  private computeStandardThresholds(
+    sensorType: string,
+    ratedCurrentA: number,
+    std: {
+      defaultHealthyMax: number;
+      defaultWarningMax: number;
+      defaultCriticalMax: number;
+    },
+  ): { healthyMax: number; warningMax: number; criticalMax: number } {
+    if (sensorType === 'current') {
       return {
-        sensorType: std.sensorType,
-        healthyMax: std.defaultHealthyMax,
-        warningMax: std.defaultWarningMax,
-        criticalMax: std.defaultCriticalMax,
+        healthyMax:
+          Math.round(ratedCurrentA * std.defaultHealthyMax * 100) / 100,
+        warningMax:
+          Math.round(ratedCurrentA * std.defaultWarningMax * 100) / 100,
+        criticalMax:
+          Math.round(ratedCurrentA * std.defaultCriticalMax * 100) / 100,
       };
-    });
+    }
+    return {
+      healthyMax: std.defaultHealthyMax,
+      warningMax: std.defaultWarningMax,
+      criticalMax: std.defaultCriticalMax,
+    };
   }
 
   /**
@@ -290,6 +306,54 @@ export class MotorConfigService {
       warningMax: dto.warningMax,
       criticalMax: dto.criticalMax,
     });
+
+    return updated;
+  }
+
+  /**
+   * Reset a sensor's thresholds to the current global standard.
+   * Current sensors are recomputed as ratedCurrentA × standard multiplier,
+   * matching the values a motor would get if created today.
+   */
+  async resetThresholds(motorId: number, sensorId: number) {
+    const sensor = await this.prisma.motorSensor.findFirst({
+      where: { id: sensorId, motorId },
+    });
+    if (!sensor) {
+      throw new NotFoundException(
+        `Sensor ${sensorId} no encontrado en motor ${motorId}`,
+      );
+    }
+
+    const motor = await this.prisma.motor.findUnique({
+      where: { id: sensor.motorId },
+    });
+    if (!motor) {
+      throw new NotFoundException(`Motor ${motorId} no encontrado`);
+    }
+
+    const standard = await this.prisma.sensorStandard.findFirst({
+      where: { sensorType: sensor.sensorType },
+    });
+    if (!standard) {
+      throw new NotFoundException(
+        `Standard para sensor tipo ${sensor.sensorType} no encontrado`,
+      );
+    }
+
+    const defaults = this.computeStandardThresholds(
+      sensor.sensorType,
+      motor.ratedCurrentA,
+      standard,
+    );
+
+    const updated = await this.prisma.motorSensor.update({
+      where: { id: sensorId },
+      data: defaults,
+    });
+
+    // Hot-reload: evaluation uses the restored thresholds immediately
+    this.telemetryEvaluation.updateSensorThresholds(sensorId, defaults);
 
     return updated;
   }

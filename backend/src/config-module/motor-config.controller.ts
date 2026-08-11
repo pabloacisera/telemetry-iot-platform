@@ -89,6 +89,16 @@ export class MotorConfigController {
     return this.configService.updateThresholds(motorId, sensorId, dto);
   }
 
+  /** Reset sensor thresholds to the current global standard (delete override). */
+  @Delete('motors/:motorId/sensors/:sensorId/thresholds')
+  @Roles('admin')
+  async resetThresholds(
+    @Param('motorId', ParseIntPipe) motorId: number,
+    @Param('sensorId', ParseIntPipe) sensorId: number,
+  ) {
+    return this.configService.resetThresholds(motorId, sensorId);
+  }
+
   // ── Alert Configuration ──────────────────────────────────────
 
   /** Get global alert configuration. */

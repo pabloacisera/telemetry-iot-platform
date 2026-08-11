@@ -25,7 +25,7 @@ describe('MotorConfigService', () => {
       deleteMany: jest.Mock;
     };
     sensorFault: { deleteMany: jest.Mock };
-    sensorStandard: { findMany: jest.Mock };
+    sensorStandard: { findMany: jest.Mock; findFirst: jest.Mock };
     alert: { deleteMany: jest.Mock };
     motorStatusHistory: { deleteMany: jest.Mock };
     $transaction: jest.Mock;
@@ -84,6 +84,7 @@ describe('MotorConfigService', () => {
             defaultCriticalMax: 1.3,
           },
         ]),
+        findFirst: jest.fn(),
       },
       alert: { deleteMany: jest.fn() },
       motorStatusHistory: { deleteMany: jest.fn() },
@@ -285,6 +286,85 @@ describe('MotorConfigService', () => {
       await expect(
         service.updateThresholds(1, 10, { healthyMax: 105 }),
       ).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('resetThresholds', () => {
+    it('should restore current sensor thresholds as rated × standard multiplier', async () => {
+      prisma.motorSensor.findFirst.mockResolvedValue({
+        id: 10,
+        motorId: 1,
+        sensorType: 'current',
+        healthyMax: 30,
+        warningMax: 35,
+        criticalMax: 40,
+      });
+      prisma.motor.findUnique.mockResolvedValue({ id: 1, ratedCurrentA: 16 });
+      prisma.sensorStandard.findFirst.mockResolvedValue({
+        sensorType: 'current',
+        defaultHealthyMax: 1.05,
+        defaultWarningMax: 1.15,
+        defaultCriticalMax: 1.3,
+      });
+      prisma.motorSensor.update.mockResolvedValue({
+        id: 10,
+        healthyMax: 16.8,
+        warningMax: 18.4,
+        criticalMax: 20.8,
+      });
+
+      const result = await service.resetThresholds(1, 10);
+
+      expect(prisma.motorSensor.update).toHaveBeenCalledWith({
+        where: { id: 10 },
+        data: { healthyMax: 16.8, warningMax: 18.4, criticalMax: 20.8 },
+      });
+      expect(telemetryEvaluation.updateSensorThresholds).toHaveBeenCalledWith(
+        10,
+        { healthyMax: 16.8, warningMax: 18.4, criticalMax: 20.8 },
+      );
+      expect(result.healthyMax).toBe(16.8);
+    });
+
+    it('should restore non-current sensor thresholds as standard values', async () => {
+      prisma.motorSensor.findFirst.mockResolvedValue({
+        id: 11,
+        motorId: 1,
+        sensorType: 'temperature',
+        healthyMax: 60,
+        warningMax: 75,
+        criticalMax: 95,
+      });
+      prisma.motor.findUnique.mockResolvedValue({ id: 1, ratedCurrentA: 16 });
+      prisma.sensorStandard.findFirst.mockResolvedValue({
+        sensorType: 'temperature',
+        defaultHealthyMax: 70,
+        defaultWarningMax: 80,
+        defaultCriticalMax: 90,
+      });
+      prisma.motorSensor.update.mockResolvedValue({
+        id: 11,
+        healthyMax: 70,
+        warningMax: 80,
+        criticalMax: 90,
+      });
+
+      const result = await service.resetThresholds(1, 11);
+
+      expect(result).toEqual({ id: 11, healthyMax: 70, warningMax: 80, criticalMax: 90 });
+      expect(telemetryEvaluation.updateSensorThresholds).toHaveBeenCalledWith(11, {
+        healthyMax: 70,
+        warningMax: 80,
+        criticalMax: 90,
+      });
+    });
+
+    it('should throw NotFoundException if sensor not found for motor', async () => {
+      prisma.motorSensor.findFirst.mockResolvedValue(null);
+
+      await expect(service.resetThresholds(1, 99)).rejects.toThrow(
+        NotFoundException,
+      );
     });
   });
 

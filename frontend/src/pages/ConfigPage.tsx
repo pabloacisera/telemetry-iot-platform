@@ -63,6 +63,24 @@ interface AlertOverride {
 
 type Tab = 'motors' | 'sensors' | 'alerts';
 
+/** Effective default thresholds for a sensor type on a given motor.
+ * Current thresholds are multipliers of rated current; other sensor types
+ * use the global standard values directly. Mirrors the backend logic. */
+function effectiveThresholds(std: SensorStandard, ratedCurrentA: number): { healthyMax: number; warningMax: number; criticalMax: number } {
+  if (std.sensorType === 'current') {
+    return {
+      healthyMax: Math.round(ratedCurrentA * std.defaultHealthyMax * 100) / 100,
+      warningMax: Math.round(ratedCurrentA * std.defaultWarningMax * 100) / 100,
+      criticalMax: Math.round(ratedCurrentA * std.defaultCriticalMax * 100) / 100,
+    };
+  }
+  return {
+    healthyMax: std.defaultHealthyMax,
+    warningMax: std.defaultWarningMax,
+    criticalMax: std.defaultCriticalMax,
+  };
+}
+
 const STATUS_PRIORITY: Record<string, number> = {
   disabled: 0,
   alarm: 1,
@@ -190,7 +208,7 @@ export function ConfigPage() {
             motors={motors}
             alertConfig={alertConfig}
             overrides={overrides}
-            onEditOverride={(motorId) => setEditingOverride({ motorId })}
+            onEditOverride={(o) => setEditingOverride({ motorId: o.motorId, override: o })}
             onDeleteOverride={handleDeleteOverride}
             onEditGlobalConfig={handleUpdateGlobalConfig}
           />
@@ -217,6 +235,7 @@ export function ConfigPage() {
           motorId={editingThresholds.motorId}
           sensor={editingThresholds.sensor}
           standard={standards.find((s) => s.sensorType === editingThresholds.sensor.sensorType)}
+          ratedCurrentA={motors.find((m) => m.id === editingThresholds.motorId)?.ratedCurrentA}
           onSaved={() => { setEditingThresholds(null); setDirty(true); fetchAll(); }}
           onCancel={() => setEditingThresholds(null)}
         />
@@ -379,23 +398,37 @@ function SensorsTab({ motors, standards, onStandardUpdated }: {
   // ── Sección 2/3: regla personalizada ──
   const [showOverrideModal, setShowOverrideModal] = useState(false);
   const [editingSensor, setEditingSensor] = useState<{ motorId: number; sensor: Sensor } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleDeleteOverride(motorId: number, sensorId: number) {
+    if (!window.confirm('Restaurar los umbrales de este sensor a los valores por defecto? Esta regla personalizada se eliminara.')) return;
+    setDeleteError(null);
+    try {
+      await api.delete(`/config/motors/${motorId}/sensors/${sensorId}/thresholds`);
+      onStandardUpdated();
+    } catch {
+      setDeleteError('Error al restaurar los umbrales del sensor');
+    }
+  }
 
   // ── Sección 3: paginación de tabla ──
   const PAGE_SIZE = 5;
   const [page, setPage] = useState(0);
 
   // Derivar "reglas personalizadas" de sensores: todos los motores × sensores
-  // que difieran del standard global de su tipo
-  const sensorOverrides: { motor: Motor; sensor: Sensor; standard: SensorStandard }[] = [];
+  // que difieran de los valores efectivos del standard global de su tipo.
+  // Para corriente el standard es un multiplicador de la corriente nominal.
+  const sensorOverrides: { motor: Motor; sensor: Sensor; standard: SensorStandard; effective: { healthyMax: number; warningMax: number; criticalMax: number } }[] = [];
   for (const motor of motors) {
     for (const sensor of motor.sensors) {
       const std = standards.find((s) => s.sensorType === sensor.sensorType);
       if (!std) continue;
+      const effective = effectiveThresholds(std, motor.ratedCurrentA);
       const isDifferent =
-        sensor.healthyMax !== std.defaultHealthyMax ||
-        sensor.warningMax !== std.defaultWarningMax ||
-        sensor.criticalMax !== std.defaultCriticalMax;
-      if (isDifferent) sensorOverrides.push({ motor, sensor, standard: std });
+        sensor.healthyMax !== effective.healthyMax ||
+        sensor.warningMax !== effective.warningMax ||
+        sensor.criticalMax !== effective.criticalMax;
+      if (isDifferent) sensorOverrides.push({ motor, sensor, standard: std, effective });
     }
   }
 
@@ -526,6 +559,7 @@ function SensorsTab({ motors, standards, onStandardUpdated }: {
           </p>
         ) : (
           <>
+            {deleteError && <p className="config-error">{deleteError}</p>}
             <table className="config-alert-table">
               <thead>
                 <tr>
@@ -539,7 +573,7 @@ function SensorsTab({ motors, standards, onStandardUpdated }: {
                 </tr>
               </thead>
               <tbody>
-                {pagedOverrides.map(({ motor, sensor, standard }) => (
+                {pagedOverrides.map(({ motor, sensor, standard, effective }) => (
                   <tr key={sensor.id}>
                     <td><strong>{motor.code}</strong> <span>{motor.name}</span></td>
                     <td>
@@ -552,7 +586,7 @@ function SensorsTab({ motors, standards, onStandardUpdated }: {
                     <td>{sensor.warningMax}</td>
                     <td>{sensor.criticalMax}</td>
                     <td className="config-table-ref">
-                      {standard.defaultHealthyMax}/{standard.defaultWarningMax}/{standard.defaultCriticalMax} {standard.unit}
+                      {effective.healthyMax}/{effective.warningMax}/{effective.criticalMax} {standard.unit}
                     </td>
                     <td className="config-table-actions">
                       <button
@@ -562,6 +596,14 @@ function SensorsTab({ motors, standards, onStandardUpdated }: {
                         aria-label={`Editar umbrales de ${sensor.sensorType} en ${motor.code}`}
                       >
                         <i className="fa-solid fa-pen" />
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-icon btn-icon--danger"
+                        onClick={() => handleDeleteOverride(motor.id, sensor.id)}
+                        aria-label={`Eliminar regla de ${sensor.sensorType} en ${motor.code}`}
+                      >
+                        <i className="fa-solid fa-trash" />
                       </button>
                     </td>
                   </tr>
@@ -599,6 +641,7 @@ function SensorsTab({ motors, standards, onStandardUpdated }: {
           motorId={editingSensor.motorId}
           sensor={editingSensor.sensor}
           standard={standards.find((s) => s.sensorType === editingSensor.sensor.sensorType)}
+          ratedCurrentA={motors.find((m) => m.id === editingSensor.motorId)?.ratedCurrentA}
           onSaved={() => { setEditingSensor(null); onStandardUpdated(); }}
           onCancel={() => setEditingSensor(null)}
         />
@@ -628,6 +671,7 @@ function SensorOverrideModal({ motors, standards, onSaved, onCancel }: {
       motorId={selectedMotorId}
       sensor={sensor}
       standard={standard}
+      ratedCurrentA={selectedMotor?.ratedCurrentA}
       extraHeader={
         <div className="config-form-grid" style={{ marginBottom: '1rem' }}>
           <label>Motor
@@ -658,7 +702,7 @@ function AlertsTab({ motors, alertConfig, overrides, onEditOverride, onDeleteOve
   motors: Motor[];
   alertConfig: AlertConfig | null;
   overrides: AlertOverride[];
-  onEditOverride: (motorId: number) => void;
+  onEditOverride: (override: AlertOverride) => void;
   onDeleteOverride: (motorId: number) => void;
   onEditGlobalConfig: (config: AlertConfig) => void;
 }) {
@@ -789,7 +833,7 @@ function AlertsTab({ motors, alertConfig, overrides, onEditOverride, onDeleteOve
                       <button
                         type="button"
                         className="btn-icon"
-                        onClick={() => onEditOverride(o.motorId)}
+                        onClick={() => onEditOverride(o)}
                         aria-label={`Editar regla de ${o.motor.code}`}
                       >
                         <i className="fa-solid fa-pen" />
@@ -978,10 +1022,11 @@ function EditMotorModal({ motor, onSaved, onCancel }: {
   );
 }
 
-function EditThresholdsModal({ motorId, sensor, standard, extraHeader, onSaved, onCancel }: {
+function EditThresholdsModal({ motorId, sensor, standard, ratedCurrentA, extraHeader, onSaved, onCancel }: {
   motorId: number;
   sensor: Sensor;
   standard?: SensorStandard;
+  ratedCurrentA?: number;
   extraHeader?: ReactNode;
   onSaved: () => void;
   onCancel: () => void;
@@ -991,14 +1036,29 @@ function EditThresholdsModal({ motorId, sensor, standard, extraHeader, onSaved, 
   const [error, setError] = useState<string | null>(null);
   const [confirmOverride, setConfirmOverride] = useState(false);
 
+  // Efective default thresholds for this motor (current recomputed from rated)
+  const effective = standard && (standard.sensorType !== 'current' || ratedCurrentA)
+    ? effectiveThresholds(standard, ratedCurrentA ?? 0)
+    : null;
+
   const warnings: string[] = [];
-  if (standard) {
+  if (standard && effective) {
     const h = parseFloat(form.healthyMax);
     const w = parseFloat(form.warningMax);
     const c = parseFloat(form.criticalMax);
-    if (!isNaN(h) && h > standard.defaultHealthyMax) warnings.push(`Saludable (${h}) excede recomendado (${standard.defaultHealthyMax})`);
-    if (!isNaN(w) && w > standard.defaultWarningMax) warnings.push(`Advertencia (${w}) excede recomendado (${standard.defaultWarningMax})`);
-    if (!isNaN(c) && c > standard.defaultCriticalMax) warnings.push(`Critico (${c}) excede recomendado (${standard.defaultCriticalMax})`);
+    if (!isNaN(h) && h > effective.healthyMax) warnings.push(`Saludable (${h}) excede recomendado (${effective.healthyMax})`);
+    if (!isNaN(w) && w > effective.warningMax) warnings.push(`Advertencia (${w}) excede recomendado (${effective.warningMax})`);
+    if (!isNaN(c) && c > effective.criticalMax) warnings.push(`Critico (${c}) excede recomendado (${effective.criticalMax})`);
+  }
+
+  function handleRestoreDefaults() {
+    if (!effective) return;
+    setForm({
+      healthyMax: String(effective.healthyMax),
+      warningMax: String(effective.warningMax),
+      criticalMax: String(effective.criticalMax),
+    });
+    setConfirmOverride(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -1027,7 +1087,7 @@ function EditThresholdsModal({ motorId, sensor, standard, extraHeader, onSaved, 
         {extraHeader}
         {standard && (
           <p className="config-threshold-standard">
-            <i className="fa-solid fa-circle-info" /> Estandar: <strong>{standard.standardName}</strong> — Recomendado: {standard.defaultHealthyMax}/{standard.defaultWarningMax}/{standard.defaultCriticalMax} {standard.unit}
+            <i className="fa-solid fa-circle-info" /> Estandar: <strong>{standard.standardName}</strong> — Recomendado: {effective ? `${effective.healthyMax}/${effective.warningMax}/${effective.criticalMax}` : `${standard.defaultHealthyMax}/${standard.defaultWarningMax}/${standard.defaultCriticalMax}`} {standard.unit}
           </p>
         )}
         <p className="config-threshold-help">Deben cumplir: Saludable &lt; Advertencia &lt; Critico</p>
@@ -1047,6 +1107,16 @@ function EditThresholdsModal({ motorId, sensor, standard, extraHeader, onSaved, 
           </div>
         )}
         <div className="config-form-actions">
+          {effective && (
+            <button
+              type="button"
+              className="btn-cancel"
+              onClick={handleRestoreDefaults}
+              disabled={submitting}
+            >
+              <i className="fa-solid fa-rotate-left" /> Restaurar valores por defecto
+            </button>
+          )}
           <button type="submit" className="btn-create" disabled={submitting}>{submitting ? 'Guardando...' : confirmOverride ? 'Confirmar' : 'Guardar'}</button>
           <button type="button" className="btn-cancel" onClick={onCancel}>Cancelar</button>
         </div>
