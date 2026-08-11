@@ -85,7 +85,7 @@ export class AlertsService {
     if (cause === 'none') {
       where.metadata = { equals: Prisma.DbNull };
     } else if (cause) {
-      where.metadata = { path: ['cause'], string_contains: cause };
+      where.metadata = { path: '$.cause', string_contains: cause };
     }
 
     const [data, total] = await this.prisma.$transaction([
