@@ -51,7 +51,10 @@ describe('StatusTransitionService — createAlert anti-flood', () => {
     await service.createAlert(7, 'motor_alarm', { reason: 'overcurrent' });
 
     expect(prisma.alert.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ motorId: 7, type: 'motor_alarm' }),
+      data: expect.objectContaining({
+        motorId: 7,
+        type: 'motor_alarm',
+      }) as Record<string, unknown>,
     });
     expect(realtime.emitAlert).toHaveBeenCalledWith(7, expect.any(Object));
   });
@@ -98,21 +101,26 @@ describe('StatusTransitionService — createAlert anti-flood', () => {
   it('should create for a different type within the throttle window', async () => {
     // Throttle is scoped per (motorId, type): a recent motor_alarm must not
     // block a new motor_trip for the same motor.
-    prisma.alert.findFirst.mockImplementation((args) => {
-      if (args.where.type === 'motor_alarm') {
-        return Promise.resolve({
-          id: 5,
-          resolvedAt: new Date(),
-          triggeredAt: new Date(Date.now() - 10_000),
-        });
-      }
-      return Promise.resolve(null);
-    });
+    prisma.alert.findFirst.mockImplementation(
+      (args: { where: { motorId?: number; type?: string } }) => {
+        if (args.where.type === 'motor_alarm') {
+          return Promise.resolve({
+            id: 5,
+            resolvedAt: new Date(),
+            triggeredAt: new Date(Date.now() - 10_000),
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
 
     await service.createAlert(7, 'motor_trip', { reason: 'critical_reading' });
 
     expect(prisma.alert.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({ motorId: 7, type: 'motor_trip' }),
+      data: expect.objectContaining({
+        motorId: 7,
+        type: 'motor_trip',
+      }) as Record<string, unknown>,
     });
     expect(realtime.emitAlert).toHaveBeenCalled();
   });
@@ -120,22 +128,27 @@ describe('StatusTransitionService — createAlert anti-flood', () => {
   it('should create for a different motor within the throttle window', async () => {
     // Throttle is scoped per (motorId, type): a recent alert on motor 7 must
     // not block a new alert on motor 8.
-    prisma.alert.findFirst.mockImplementation((args) => {
-      if (args.where.motorId === 7) {
-        return Promise.resolve({
-          id: 5,
-          resolvedAt: new Date(),
-          triggeredAt: new Date(Date.now() - 10_000),
-        });
-      }
-      return Promise.resolve(null);
-    });
+    prisma.alert.findFirst.mockImplementation(
+      (args: { where: { motorId?: number; type?: string } }) => {
+        if (args.where.motorId === 7) {
+          return Promise.resolve({
+            id: 5,
+            resolvedAt: new Date(),
+            triggeredAt: new Date(Date.now() - 10_000),
+          });
+        }
+        return Promise.resolve(null);
+      },
+    );
 
     await service.createAlert(8, 'motor_alarm', { reason: 'overcurrent' });
 
     expect(prisma.alert.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: expect.objectContaining({ motorId: 8, type: 'motor_alarm' }),
+        where: expect.objectContaining({
+          motorId: 8,
+          type: 'motor_alarm',
+        }) as Record<string, unknown>,
       }),
     );
     expect(prisma.alert.create).toHaveBeenCalled();
