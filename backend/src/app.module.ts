@@ -11,6 +11,7 @@ import { AlertsModule } from './alerts';
 import { AuthModule } from './auth';
 import { RagModule } from './rag';
 import { MotorConfigModule } from './config-module';
+import { LandingModule } from './landing';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { MotorConfigModule } from './config-module';
     AuthModule,
     RagModule,
     MotorConfigModule,
+    LandingModule,
   ],
 })
 export class AppModule {}

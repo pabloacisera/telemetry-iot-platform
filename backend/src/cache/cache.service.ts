@@ -373,4 +373,14 @@ export class CacheService implements OnModuleDestroy {
     );
     return val === '1';
   }
+
+  // ===================================================================
+  // Landing subscriptions (pre-email-system lead capture)
+  // ===================================================================
+
+  /** Register a landing subscription lead. Returns true if newly added. */
+  async saveLead(email: string): Promise<boolean> {
+    const added = await this.redis.sadd('landing:leads', email);
+    return added === 1;
+  }
 }
