@@ -31,19 +31,31 @@ In local mode:
 
 ### Production (EC2 via Ansible)
 
+> **Primer despliegue:** la infraestructura global de la EC2 (Docker, `nginx-global`, cloudflared, túnel
+> y subdominio Cloudflare) se configura **una vez a mano**. Los seeds post-deploy también se corren una vez.
+> Ver el runbook completo: [`docs/28-first-deploy-runbook.md`](./28-first-deploy-runbook.md).
+
 ```bash
 cd ansible && ansible-playbook playbook.yml -i inventory.ini
 ```
 
 Ansible automates:
 1. Copy project to `/opt/apps/telemetry/` on the EC2.
-2. `docker compose up -d --build` (starts all 8 containers).
-3. Connect the app network to the global Nginx and copy the Nginx conf to `conf.d/`.
-4. Validate + reload global Nginx (never restart).
+2. Copy the production `.env` (from `ansible/files/.env.production`).
+3. `docker compose up -d --build` (starts all 8 containers).
+4. Connect the app network (`telemetry-net`) to `nginx-global`.
+5. Copy `ansible/files/nginx/telemetry.conf` to the global Nginx `conf.d/`.
+6. Validate + reload global Nginx (never restart).
 
-Production access: only `telemetry.artisandev.site` (→ frontend) is public; `/api` and `/socket.io` are
-routed by the global Nginx to the internal backend. MySQL, Mongo, Redis, Grafana and the broker (except 1883
-for the fault-injection script) stay internal.
+Production access: only `telemetry.artisandevs.site` (→ frontend) is public; `/api`, `/socket.io` and
+`/grafana` are routed by the global Nginx to the internal services. MySQL, Mongo, Redis and the broker
+(except 1883 for the fault-injection script) stay internal.
+
+One-time manual seeds after the first deploy (see runbook):
+```bash
+docker exec backend-nestjs node dist-seed/seed.js
+docker exec backend-nestjs node dist-seed/seed-embeddings.js
+```
 
 ## Why Ansible and not just `ssh + docker compose up`?
 

@@ -26,8 +26,10 @@ function welcomeCreds(calls: unknown[][]): WelcomeEmailCreds {
 
 describe('LandingService', () => {
   let service: LandingService;
-  let prisma: { user: { findUnique: jest.Mock; create: jest.Mock } };
-  let cache: { saveLead: jest.Mock };
+  let prisma: {
+    user: { findUnique: jest.Mock; create: jest.Mock; delete: jest.Mock };
+  };
+  let cache: { saveLead: jest.Mock; removeLead: jest.Mock };
   let email: { enabled: boolean; sendWelcomeEmail: jest.Mock };
   let config: { get: jest.Mock };
 
@@ -40,9 +42,13 @@ describe('LandingService', () => {
           email: 'user@example.com',
           role: 'viewer',
         }),
+        delete: jest.fn().mockResolvedValue({ id: 7 }),
       },
     };
-    cache = { saveLead: jest.fn().mockResolvedValue(true) };
+    cache = {
+      saveLead: jest.fn().mockResolvedValue(true),
+      removeLead: jest.fn().mockResolvedValue(undefined),
+    };
     email = {
       enabled: true,
       sendWelcomeEmail: jest.fn().mockResolvedValue(true),
@@ -160,6 +166,18 @@ describe('LandingService', () => {
 
       expect(result.granted).toBe(true);
       expect(prisma.user.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('rolls back the account when the welcome email fails to send', async () => {
+      email.sendWelcomeEmail.mockResolvedValue(false);
+
+      await expect(service.subscribe('user@example.com')).rejects.toThrow(
+        ServiceUnavailableException,
+      );
+      expect(prisma.user.delete).toHaveBeenCalledWith({
+        where: { id: 7 },
+      });
+      expect(cache.removeLead).toHaveBeenCalledWith('user@example.com');
     });
   });
 });

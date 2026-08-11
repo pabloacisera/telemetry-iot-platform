@@ -98,11 +98,32 @@ export class LandingService {
       );
     }
 
-    await this.emailService.sendWelcomeEmail(normalized, {
+    const sent = await this.emailService.sendWelcomeEmail(normalized, {
       username,
       email: normalized,
       password,
     });
+
+    // If the welcome email could not be delivered, roll back the account so we
+    // never leave orphan users whose credentials were never sent.
+    if (!sent) {
+      await this.prisma.user
+        .delete({ where: { id: user.id } })
+        .catch(() => undefined);
+      try {
+        await this.cacheService.removeLead(normalized);
+      } catch (err) {
+        this.logger.warn(
+          `Redis lead cleanup failed for ${normalized}: ${(err as Error).message}`,
+        );
+      }
+      this.logger.warn(
+        `Rolled back demo account ${user.id} (${normalized}): welcome email was not sent`,
+      );
+      throw new ServiceUnavailableException(
+        'No se pudo enviar el correo de bienvenida',
+      );
+    }
 
     return { granted: true, email: normalized };
   }

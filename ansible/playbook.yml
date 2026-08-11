@@ -2,11 +2,12 @@
 # Ansible playbook for deploying the IoT Telemetry Platform to EC2.
 #
 # What it does (idempotent — safe to run multiple times):
-# 1. Copies the project to /opt/telemetry-platform/ on the EC2.
+# 1. Copies the project to /opt/apps/telemetry/ on the EC2.
 # 2. Copies the production .env file.
 # 3. Runs docker compose up -d (builds and starts all 8 containers).
-# 4. Copies the Nginx site config to the global Nginx conf.d/.
-# 5. Validates and reloads global Nginx (never restarts it).
+# 4. Connects telemetry-net to nginx-global (so the global Nginx reaches the app).
+# 5. Copies the Nginx site config (files/nginx/telemetry.conf — /, /api/, /socket.io/, /grafana/).
+# 6. Validates and reloads global Nginx (never restarts it).
 #
 # Usage:
 #   cd ansible
@@ -52,8 +53,20 @@
         delete: true
 
     # ----------------------------------------------------------
-    # 2. Production .env
+    # 2. Production .env (local-only, ver .gitignore)
     # ----------------------------------------------------------
+    - name: Check .env.production exists locally
+      stat:
+        path: "{{ playbook_dir }}/files/.env.production"
+      register: prod_env
+
+    - name: Fail if .env.production is missing
+      fail:
+        msg: >-
+          ansible/files/.env.production no existe. Está en .gitignore (local-only);
+          mantené una copia local — el playbook la copia a la EC2.
+      when: not prod_env.stat.exists
+
     - name: Copy production .env file
       copy:
         src: "{{ playbook_dir }}/files/.env.production"
@@ -77,6 +90,15 @@
         var: compose_result.stdout
       when: compose_result.changed
 
+    # ----------------------------------------------------------
+    # 4. Connect app network to nginx-global (idempotente)
+    # ----------------------------------------------------------
+    - name: Connect {{ project_name }}-net to nginx-global
+      command: docker network connect {{ project_name }}-net nginx-global
+      register: connect_result
+      changed_when: "'already connected' not in connect_result.stderr"
+      failed_when: connect_result.rc != 0 and 'already connected' not in connect_result.stderr
+
     - name: Wait for frontend to be reachable
       uri:
         url: "http://localhost:5173"
@@ -87,51 +109,17 @@
       until: frontend_health.status in [200, 404]
 
     # ----------------------------------------------------------
-    # 4. Nginx site config
+    # 5. Nginx site config (canónico: ansible/files/nginx/telemetry.conf)
     # ----------------------------------------------------------
     - name: Copy Nginx site configuration
       copy:
-        content: |
-          server {
-              listen 80;
-              server_name {{ app_domain }};
-
-              # Frontend (sin nginx propio — lo sirve este nginx global)
-              location / {
-                  proxy_pass http://frontend-react:5173;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              # Backend API (el /api se elimina; el backend NestJS no usa prefijo)
-              location /api/ {
-                  proxy_pass http://backend-nestjs:3000/;
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-              }
-
-              # WebSocket (socket.io)
-              location /socket.io/ {
-                  proxy_pass http://backend-nestjs:3000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_set_header Host $host;
-                  proxy_set_header X-Real-IP $remote_addr;
-                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                  proxy_set_header X-Forwarded-Proto $scheme;
-              }
-          }
+        src: "{{ playbook_dir }}/files/nginx/telemetry.conf"
         dest: "{{ nginx_conf_dir }}/{{ project_name }}.conf"
         mode: "0644"
       register: nginx_config
 
     # ----------------------------------------------------------
-    # 5. Validate and reload Nginx (NEVER restart)
+    # 6. Validate and reload Nginx (NEVER restart)
     # ----------------------------------------------------------
     - name: Validate Nginx configuration
       command: docker exec nginx-global nginx -t

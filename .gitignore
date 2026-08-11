@@ -9,6 +9,8 @@ venv/
 .env
 .env.local
 .env.*.local
+# Production secrets for Ansible (local-only, copied by playbook to the EC2)
+ansible/files/.env.production
 
 # Build
 dist/

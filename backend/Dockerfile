@@ -16,8 +16,9 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-# Compile seed script (for one-time execution via docker exec, not on every boot)
+# Compile seed scripts (for one-time execution via docker exec, not on every boot)
 RUN npx tsc prisma/seed.ts --outDir dist-seed --esModuleInterop --resolveJsonModule --skipLibCheck
+RUN npx tsc src/rag/seed-embeddings.ts --outDir dist-seed --esModuleInterop --resolveJsonModule --skipLibCheck
 
 # Stage 2: production image
 FROM node:20-slim AS runner
@@ -36,5 +37,7 @@ COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 EXPOSE 3000
 
 # Only migrate on startup (idempotent, fast if already current).
-# Seed is run ONCE manually: docker exec backend-nestjs node dist-seed/prisma/seed.js
+# Seeds are run ONCE manually via docker exec (compiled to /app/dist-seed):
+#   docker exec backend-nestjs node dist-seed/seed.js            # users + motors
+#   docker exec backend-nestjs node dist-seed/seed-embeddings.js # RAG knowledge base
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]

@@ -383,4 +383,9 @@ export class CacheService implements OnModuleDestroy {
     const added = await this.redis.sadd('landing:leads', email);
     return added === 1;
   }
+
+  /** Remove a landing subscription lead (used to roll back a failed signup). */
+  async removeLead(email: string): Promise<void> {
+    await this.redis.srem('landing:leads', email);
+  }
 }
