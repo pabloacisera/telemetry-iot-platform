@@ -4,7 +4,9 @@ services:
   # ===========================================================
 
   telemetry-broker-mqtt:
-    image: eclipse-mosquitto:2
+    build:
+      context: ./mosquitto
+      dockerfile: Dockerfile
     container_name: broker-mqtt
     ports:
       - "1883:1883"
@@ -86,6 +88,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: backend-nestjs
+    volumes:
+      - ./mosquitto/password_file:/mosquitto/password_file
+      - ./mosquitto/acl_file:/mosquitto/acl_file
     env_file:
       - .env
     environment:

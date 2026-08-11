@@ -75,7 +75,8 @@ Todos los endpoints requieren `JwtAuthGuard` + `RolesGuard` con `@Roles('admin')
 
 ## Flujo de creación de motor
 
-1. Admin completa formulario (código, nombre, ubicación, corriente, tipo conexión).
+1. Admin completa formulario (código, nombre, ubicación, corriente, tipo de conexión
+   motor/MCU — WiFi o LAN).
 2. Backend valida con DTOs (`class-validator`).
 3. Se verifica que el código no exista (`ConflictException` si duplicado).
 4. Se crea el motor en MySQL con 3 sensores por defecto tomados de `SensorStandard`
@@ -85,7 +86,9 @@ Todos los endpoints requieren `JwtAuthGuard` + `RolesGuard` con `@Roles('admin')
    - Password: 32 bytes aleatorios (base64url)
    - Hash: PBKDF2-SHA512 con 101 iteraciones (formato Mosquitto `$7$...`)
 6. Se escribe en `mosquitto/password_file` y `mosquitto/acl_file`.
-7. Se envía `SIGHUP` al container `broker-mqtt` para recargar config.
+7. El broker detecta el cambio desde **dentro de su propio contenedor** (watcher en
+   `mosquitto/entrypoint.sh`) y se envía `SIGHUP` a sí mismo para recargar los archivos.
+   No se necesita acceso del backend al daemon de Docker.
 8. Se devuelve la contraseña al frontend (se muestra una sola vez).
 
 ---
@@ -148,8 +151,14 @@ Todos los endpoints requieren `JwtAuthGuard` + `RolesGuard` con `@Roles('admin')
 - `src/index.css` (clases `.config-tab-wrapper`, `.config-section-block`, etc.)
 
 ### Mosquitto
+- `mosquitto/Dockerfile` + `mosquitto/entrypoint.sh` — imagen custom que añade un watcher
+  que recarga `password_file`/`acl_file` con SIGHUP automáticamente (sin socket de Docker).
 - `mosquitto/password_file` — usuarios y hashes
 - `mosquitto/acl_file` — permisos por topic
+
+> El backend monta `mosquitto/password_file` y `mosquitto/acl_file` en `/mosquitto/`
+> (solo esos dos archivos, en modo escritura). El broker los lee desde
+> `/mosquitto/config/` (montados `:ro`) y se auto-recarga al detectar cambios.
 
 ---
 
@@ -164,5 +173,4 @@ Todos los endpoints requieren `JwtAuthGuard` + `RolesGuard` con `@Roles('admin')
 
 | Variable | Default | Descripción |
 |----------|---------|-------------|
-| `MOSQUITTO_CONFIG_DIR` | `../mosquitto` | Path al directorio de config de Mosquitto |
-| `MOSQUITTO_CONTAINER_NAME` | `broker-mqtt` | Nombre del container Docker de Mosquitto |
+| `MOSQUITTO_CONFIG_DIR` | `../mosquitto` | Path al directorio de config de Mosquitto (debe ser `/mosquitto` en Docker) |

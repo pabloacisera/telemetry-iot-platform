@@ -4,11 +4,6 @@ import { MqttProvisioningService } from './mqtt-provisioning.service';
 import { readFileSync, writeFileSync, mkdtempSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { execSync } from 'child_process';
-
-jest.mock('child_process', () => ({
-  execSync: jest.fn(),
-}));
 
 describe('MqttProvisioningService', () => {
   let service: MqttProvisioningService;
@@ -41,7 +36,6 @@ describe('MqttProvisioningService', () => {
           useValue: {
             get: (key: string, defaultValue?: string) => {
               if (key === 'MOSQUITTO_CONFIG_DIR') return tempDir;
-              if (key === 'MOSQUITTO_CONTAINER_NAME') return 'test-mosquitto';
               return defaultValue;
             },
           },
@@ -77,15 +71,6 @@ describe('MqttProvisioningService', () => {
       expect(aclFile).toContain('topic read plant/motor/16/sensor/+/cmd');
       expect(aclFile).toContain('topic write plant/motor/16/cmd/ack');
       expect(aclFile).toContain('topic read qa/motor/16/inject-fault');
-    });
-
-    it('should call docker kill --signal=SIGHUP to reload broker', () => {
-      service.provisionMotor(16);
-
-      expect(execSync).toHaveBeenCalledWith(
-        'docker kill --signal=SIGHUP test-mosquitto',
-        expect.objectContaining({ timeout: 5000 }),
-      );
     });
 
     it('should not duplicate ACL if user already exists', () => {

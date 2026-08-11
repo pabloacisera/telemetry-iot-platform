@@ -184,13 +184,3 @@ topic read plant/motor/18/sensor/+/cmd
 topic write plant/motor/18/cmd/ack
 topic write plant/motor/18/sensor/+/cmd/ack
 topic read qa/motor/18/inject-fault
-
-user esp32_motor16
-topic write plant/motor/16/telemetry
-topic write plant/motor/16/status
-topic write plant/motor/16/restart-progress
-topic read plant/motor/16/cmd
-topic read plant/motor/16/sensor/+/cmd
-topic write plant/motor/16/cmd/ack
-topic write plant/motor/16/sensor/+/cmd/ack
-topic read qa/motor/16/inject-fault

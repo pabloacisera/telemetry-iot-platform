@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { randomBytes, pbkdf2Sync } from 'crypto';
 import { readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { execSync } from 'child_process';
 
 /**
  * Service for provisioning MQTT credentials and ACL entries in Mosquitto.
@@ -13,7 +12,10 @@ import { execSync } from 'child_process';
  * 2. Hashes it in Mosquitto-compatible PBKDF2-SHA512 format
  * 3. Appends the user to the password_file
  * 4. Appends ACL entries for the motor's topics
- * 5. Sends SIGHUP to the Mosquitto container to reload config
+ *
+ * The broker watches these files from inside its own container and reloads
+ * them with SIGHUP automatically (see mosquitto/entrypoint.sh), so this
+ * service does not need access to the Docker daemon.
  *
  * When a motor is deleted, it removes the corresponding entries.
  */
@@ -21,16 +23,11 @@ import { execSync } from 'child_process';
 export class MqttProvisioningService {
   private readonly logger = new Logger(MqttProvisioningService.name);
   private readonly mosquittoDir: string;
-  private readonly containerName: string;
 
   constructor(private readonly configService: ConfigService) {
     this.mosquittoDir = this.configService.get<string>(
       'MOSQUITTO_CONFIG_DIR',
       join(process.cwd(), '..', 'mosquitto'),
-    );
-    this.containerName = this.configService.get<string>(
-      'MOSQUITTO_CONTAINER_NAME',
-      'broker-mqtt',
     );
   }
 
@@ -49,9 +46,6 @@ export class MqttProvisioningService {
     // Append ACL entries
     this.appendAclEntries(username, motorId);
 
-    // Reload Mosquitto
-    this.reloadBroker();
-
     this.logger.log(`Provisioned MQTT credentials for ${username}`);
     return password;
   }
@@ -64,7 +58,6 @@ export class MqttProvisioningService {
 
     this.removeFromPasswordFile(username);
     this.removeAclEntries(username);
-    this.reloadBroker();
 
     this.logger.log(`Deprovisioned MQTT credentials for ${username}`);
   }
@@ -194,23 +187,5 @@ export class MqttProvisioningService {
     }
 
     writeFileSync(filePath, filtered.join('\n'), 'utf-8');
-  }
-
-  /**
-   * Reload Mosquitto config by sending SIGHUP to the container.
-   * Falls back gracefully if docker is not available (dev without containers).
-   */
-  private reloadBroker(): void {
-    try {
-      execSync(`docker kill --signal=SIGHUP ${this.containerName}`, {
-        timeout: 5000,
-        stdio: 'pipe',
-      });
-      this.logger.log('Mosquitto config reloaded (SIGHUP sent)');
-    } catch (error) {
-      this.logger.warn(
-        `Could not reload Mosquitto (container "${this.containerName}" may not be running): ${(error as Error).message}`,
-      );
-    }
   }
 }
