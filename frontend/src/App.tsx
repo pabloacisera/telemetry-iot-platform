@@ -9,6 +9,7 @@ import { MotorDetailPage } from './pages/MotorDetailPage';
 import { ReferencePage } from './pages/ReferencePage';
 import { ConfigPage } from './pages/ConfigPage';
 import { AlertHistoryPage } from './pages/AlertHistoryPage';
+import { LandingPage } from './pages/LandingPage';
 import { ProtectedRoute } from './components/routes/ProtectedRoute';
 
 /**
@@ -32,6 +33,7 @@ function App() {
   return (
     <BrowserRouter>
       <Routes>
+        <Route path="/" element={<LandingPage />} />
         <Route
           path="/login"
           element={user ? <Navigate to="/dashboard" /> : <LoginPage />}
@@ -43,7 +45,7 @@ function App() {
           <Route path="/alertas" element={<AlertHistoryPage />} />
           <Route path="/config" element={<ConfigPage />} />
         </Route>
-        <Route path="*" element={<Navigate to="/dashboard" />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
