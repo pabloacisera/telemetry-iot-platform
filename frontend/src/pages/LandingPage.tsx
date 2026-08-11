@@ -73,16 +73,19 @@ const SHOTS = [
     icon: 'fa-solid fa-border-all',
     title: 'Panel general de planta',
     description: 'Todos los motores con estado y sensores en una vista.',
+    img: '/screenshots/dashboard2.webp',
   },
   {
     icon: 'fa-solid fa-wave-square',
     title: 'Detalle de motor',
     description: 'Gráficos de vibración, temperatura y corriente por motor.',
+    img: '/screenshots/charts.webp',
   },
   {
     icon: 'fa-solid fa-table-list',
     title: 'Historial de alertas',
     description: 'Trazabilidad completa de alarmas, causas y acciones.',
+    img: '/screenshots/alerts.webp',
   },
 ];
 
@@ -160,9 +163,11 @@ export function LandingPage() {
                 </a>
               </div>
             </div>
-            <div className="landing-shot landing-shot--hero" role="img" aria-label="Captura del panel de monitoreo">
-              <i className="fa-solid fa-image" aria-hidden="true" />
-              <span>Captura del panel — próximamente</span>
+            <div className="landing-shot landing-shot--hero">
+              <img
+                src="/screenshots/dashboard.webp"
+                alt="Panel general de monitoreo de motores en tiempo real"
+              />
             </div>
           </div>
         </section>
@@ -170,16 +175,16 @@ export function LandingPage() {
         <section className="landing-stats" aria-label="Cifras de la plataforma">
           <div className="landing-stats-inner">
             <div className="landing-stat">
-              <strong>15</strong>
-              <span>motores por planta</span>
+              <strong>Ilimitados</strong>
+              <span>motores en una misma planta</span>
             </div>
             <div className="landing-stat">
               <strong>3</strong>
               <span>sensores por motor</span>
             </div>
             <div className="landing-stat">
-              <strong>Segundos</strong>
-              <span>de latencia en alertas</span>
+              <strong>Mínima</strong>
+              <span>latencia en alertas</span>
             </div>
             <div className="landing-stat">
               <strong>24/7</strong>
@@ -229,8 +234,7 @@ export function LandingPage() {
           <div className="landing-shots">
             {SHOTS.map((shot) => (
               <figure key={shot.title} className="landing-shot landing-shot--card">
-                <i className="fa-solid fa-image" aria-hidden="true" />
-                <span className="landing-shot-label">Captura próximamente</span>
+                <img src={shot.img} alt={`Captura: ${shot.title}`} loading="lazy" />
                 <figcaption>
                   <h3>{shot.title}</h3>
                   <p>{shot.description}</p>

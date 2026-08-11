@@ -52,7 +52,6 @@ export function UserMenu() {
         title="Cerrar sesión"
       >
         <i className="fa-solid fa-right-from-bracket" aria-hidden="true" />
-        <span className="logout-label">Salir</span>
       </button>
     </div>
   );

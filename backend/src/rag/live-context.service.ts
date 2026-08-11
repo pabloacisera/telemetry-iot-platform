@@ -50,6 +50,10 @@ export class LiveContextService {
   /** Readings context window in hours. */
   private readonly contextWindowHours = 4;
 
+  /** Timezone used to format times in the prompt (container default is UTC). */
+  private readonly timeZone =
+    process.env.APP_TIMEZONE ?? 'America/Argentina/Buenos_Aires';
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly cacheService: CacheService,
@@ -158,6 +162,7 @@ export class LiveContextService {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
+      timeZone: this.timeZone,
     });
   }
 
@@ -167,6 +172,7 @@ export class LiveContextService {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
+      timeZone: this.timeZone,
     });
   }
 
