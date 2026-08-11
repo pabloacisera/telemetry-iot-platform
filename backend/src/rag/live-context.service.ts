@@ -176,6 +176,7 @@ export class LiveContextService {
 
     const statusMap: Record<string, string> = {
       healthy: 'Saludable',
+      alarm: 'Alarma',
       under_review: 'En revisión',
       shutting_down: 'Deteniendo',
       restarting: 'Reiniciando',
@@ -276,10 +277,11 @@ export class LiveContextService {
       lines.push('');
       lines.push('### Alertas recientes (últimas 4 horas)');
       const alertLabels: Record<string, string> = {
-        warning: 'Advertencia',
-        forced_restart: 'Reinicio forzado',
-        disabled: 'Deshabilitado',
-        sensor_failure_widespread: 'Falla general de sensores',
+        motor_alarm: 'Alarma de motor',
+        motor_trip: 'Trip forzado',
+        motor_disabled: 'Motor deshabilitado',
+        sensor_fault: 'Falla de sensor',
+        sensor_fault_persistent: 'Falla persistente de sensor',
       };
       for (const a of ctx.recentAlerts) {
         const label = alertLabels[a.type] || a.type;

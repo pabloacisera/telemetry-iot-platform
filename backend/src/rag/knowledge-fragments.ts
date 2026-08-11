@@ -112,11 +112,14 @@ export const KNOWLEDGE_FRAGMENTS = [
   },
   {
     chunk_text:
-      'A motor entering "under_review" state means the evaluation system detected either: ' +
-      '5 out of 8 consecutive readings in warning zone (sustained anomaly over 2 minutes), or ' +
-      'a single reading in critical zone (immediate danger). The 2-minute escalation window ' +
-      'allows operators to intervene before automatic restart is triggered.',
-    topic: 'under_review_explanation',
+      'A motor entering the "alarm" state means one of its sensors sustained N consecutive ' +
+      'anomalous readings (readings above warning_max, N configurable per motor, default 5). ' +
+      'When alarm triggers, a grace timer starts (configurable, default 2 minutes) during which ' +
+      'the operator can intervene. If nobody acts, the system trips and restarts the motor. ' +
+      'A single critical reading (above critical_max) triggers an immediate trip WITHOUT waiting ' +
+      'for the grace timer. After a restart, a cooldown period (minimum 5 minutes) doubles the ' +
+      'consecutive-readings threshold so the motor cannot trip again instantly.',
+    topic: 'alarm_explanation',
     source_reference:
       'System state machine design (docs/04-anomaly-state-machine.md)',
   },
@@ -124,8 +127,9 @@ export const KNOWLEDGE_FRAGMENTS = [
     chunk_text:
       'Sensor fault states are independent from motor health evaluation. A sensor in "fault" or ' +
       '"fault_persistent" state has its readings excluded from motor evaluation — the motor is ' +
-      'assessed only by healthy sensors. If all 3 sensors are in fault simultaneously, the motor ' +
-      'transitions to "under_review" with type "sensor_failure_widespread" (cannot trust any data).',
+      'assessed only by healthy sensors. If all 3 sensors of a motor are in fault simultaneously, ' +
+      'the motor cannot be evaluated at all, but the system does NOT change the motor status on ' +
+      'its own in that scenario.',
     topic: 'sensor_fault_independence',
     source_reference:
       'System state machine design (docs/04-anomaly-state-machine.md)',
@@ -168,10 +172,12 @@ export const KNOWLEDGE_FRAGMENTS = [
   // State reference for operators (Spanish context)
   {
     chunk_text:
-      'Los estados del motor son: "Saludable" (operación normal), "En revisión" (anomalía detectada, ' +
-      'el sistema espera 2 minutos antes de actuar), "Deteniendo" (comando de parada enviado), ' +
-      '"Reiniciando" (ciclo de 100 segundos), "Deshabilitado" (anomalía persistió tras reinicio, ' +
-      'requiere inspección física y reactivación manual), "Parada manual" (detenido por un operador).',
+      'Los estados del motor son: "Saludable" (operación normal), "Alarma" (anomalía detectada: ' +
+      'N lecturas consecutivas anómalas; el sistema espera un periodo de gracia configurable, ' +
+      'por defecto 2 minutos, antes de actuar; una lectura crítica dispara la parada inmediata), ' +
+      '"Deteniendo" (comando de parada enviado), "Reiniciando" (ciclo de 100 segundos), ' +
+      '"Deshabilitado" (anomalía persistió tras reinicio, requiere inspección física y reactivación ' +
+      'manual), "Parada manual" (detenido por un operador).',
     topic: 'motor_states_reference',
     source_reference: 'Sistema de telemetría - Referencia de estados',
   },
@@ -186,18 +192,20 @@ export const KNOWLEDGE_FRAGMENTS = [
   },
   {
     chunk_text:
-      'Tipos de alerta: "Advertencia" se genera con 5/8 lecturas anómalas o 1 lectura crítica. ' +
-      '"Reinicio forzado" cuando el sistema reinicia automáticamente después de 2 minutos sin intervención. ' +
-      '"Deshabilitado" cuando la anomalía persiste post-reinicio. "Falla general de sensores" cuando ' +
-      'los 3 sensores del motor están en falla simultáneamente y no se puede evaluar su salud.',
+      'Tipos de alerta: "Alarma de motor" (N lecturas consecutivas anómalas; abre la ventana de gracia), ' +
+      '"Trip forzado" (el sistema reinicia el motor automáticamente tras vencer la ventana de gracia sin ' +
+      'intervención, o por una lectura crítica inmediata), "Motor deshabilitado" (la anomalía persiste ' +
+      'post-reinicio, motor fuera de servicio), "Falla de sensor" (sensor fuera de rango, atascado o ' +
+      'desconectado; se intenta un reinicio automático) y "Falla persistente de sensor" (el sensor falló ' +
+      'nuevamente tras el reinicio automático, requiere intervención manual).',
     topic: 'alert_types_reference',
     source_reference: 'Sistema de telemetría - Referencia de estados',
   },
   {
     chunk_text:
       'Para detener un motor manualmente: el operador o admin presiona "Detener" en la vista de detalle ' +
-      'del motor. Solo está disponible si el motor está "Saludable" o "En revisión". Para reiniciar: ' +
-      'presionar "Reiniciar", disponible cuando el motor está "En revisión", "Parada manual" o "Deshabilitado". ' +
+      'del motor. Solo está disponible si el motor está "Saludable" o "Alarma". Para reiniciar: ' +
+      'presionar "Reiniciar", disponible cuando el motor está "Alarma", "Parada manual" o "Deshabilitado". ' +
       'Ambas acciones envían comandos MQTT al ESP32 correspondiente.',
     topic: 'manual_commands_reference',
     source_reference: 'Sistema de telemetría - Referencia de operación',

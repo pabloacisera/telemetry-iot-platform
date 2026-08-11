@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
 import { RoleGate } from '../components/routes/RoleGate';
@@ -22,6 +22,7 @@ interface Motor {
   id: number;
   code: string;
   name: string;
+  sensors?: { id: number; sensorType: string }[];
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -36,13 +37,11 @@ function defaultFromDate(): string {
 }
 
 const ALERT_LABELS: Record<string, string> = {
-  warning: 'Advertencia',
   motor_alarm: 'Alarma de motor',
   motor_trip: 'Trip forzado',
   motor_disabled: 'Motor deshabilitado',
-  forced_restart: 'Reinicio forzado',
-  disabled: 'Deshabilitado',
-  sensor_failure_widespread: 'Falla general de sensores',
+  sensor_fault: 'Falla de sensor',
+  sensor_fault_persistent: 'Falla persistente de sensor',
 };
 
 const SENSOR_LABELS: Record<string, string> = {
@@ -85,16 +84,19 @@ function formatDuration(from: string, to: string | null): string {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 }
 
-function formatCause(metadata: Record<string, unknown> | null): string {
+function formatCause(
+  metadata: Record<string, unknown> | null,
+  sensorTypeById: Map<number, string>,
+): string {
   if (!metadata) return '—';
   const parts: string[] = [];
 
-  if (typeof metadata.triggerSensorType === 'string') {
-    const label = SENSOR_LABELS[metadata.triggerSensorType] || metadata.triggerSensorType;
-    const value = typeof metadata.triggerValue === 'number'
-      ? `: ${metadata.triggerValue.toFixed(1)}`
-      : '';
-    parts.push(`${label}${value}`);
+  if (typeof metadata.triggerSensorId === 'number') {
+    const sensorType = sensorTypeById.get(metadata.triggerSensorId);
+    const label = sensorType
+      ? SENSOR_LABELS[sensorType] || sensorType
+      : `Sensor ${metadata.triggerSensorId}`;
+    parts.push(label);
   }
 
   if (typeof metadata.consecutiveReadings === 'number') {
@@ -219,6 +221,17 @@ export function AlertHistoryPage() {
     return () => clearInterval(timer);
   }, []);
 
+  // Map triggerSensorId (numeric) → sensorType, using the motors already fetched.
+  const sensorTypeById = useMemo(() => {
+    const map = new Map<number, string>();
+    for (const m of motors) {
+      for (const s of m.sensors ?? []) {
+        map.set(s.id, s.sensorType);
+      }
+    }
+    return map;
+  }, [motors]);
+
   function clearFilters() {
     setFilterMotorId('');
     setFilterStatus('all');
@@ -330,7 +343,7 @@ export function AlertHistoryPage() {
                         <span>{a.motor?.name}</span>
                       </td>
                       <td>{ALERT_LABELS[a.type] || a.type.replace(/_/g, ' ')}</td>
-                      <td className="alert-history-cause">{formatCause(a.metadata)}</td>
+                      <td className="alert-history-cause">{formatCause(a.metadata, sensorTypeById)}</td>
                       <td className="alert-history-datetime">{formatDateTime(a.triggeredAt)}</td>
                       <td className="alert-history-datetime">
                         {a.resolvedAt ? formatDateTime(a.resolvedAt) : '—'}
