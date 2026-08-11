@@ -102,10 +102,16 @@ export function LandingPage() {
     try {
       await api.post('/landing/subscribe', { email });
       setStatus('success');
-    } catch {
+    } catch (err) {
       setStatus('error');
+      const status =
+        typeof err === 'object' && err !== null
+          ? (err as { response?: { status?: number } }).response?.status
+          : undefined;
       setError(
-        'No pudimos registrar tu solicitud. Probá de nuevo o escribinos por otro medio.',
+        status === 409
+          ? 'Ya tenés acceso con este correo. Revisá tu bandeja de entrada (y la carpeta de spam/no deseado).'
+          : 'No pudimos registrar tu solicitud. Probá de nuevo o escribinos por otro medio.',
       );
     }
   };
@@ -147,7 +153,7 @@ export function LandingPage() {
               </p>
               <div className="landing-hero-actions">
                 <a href="#contacto" className="landing-cta-btn landing-cta-btn--primary">
-                  <i className="fa-solid fa-paper-plane" aria-hidden="true" /> Solicitar información
+                  <i className="fa-solid fa-paper-plane" aria-hidden="true" /> Solicitar acceso
                 </a>
                 <a href="#como-funciona" className="landing-cta-btn landing-cta-btn--ghost">
                   Ver cómo funciona
@@ -244,14 +250,18 @@ export function LandingPage() {
           <div className="landing-subscribe">
             <h2>¿Listo para proteger tu planta?</h2>
             <p>
-              Dejanos tu correo y te contactamos para mostrarte una demo
-              adaptada a tu operación.
+              Dejanos tu correo y te enviamos el acceso a una demo con todas las
+              funcionalidades habilitadas.
             </p>
             {status === 'success' ? (
               <div className="landing-subscribe-success" role="status">
                 <i className="fa-solid fa-circle-check" aria-hidden="true" />
-                <strong>¡Gracias!</strong>
-                <span>Te vamos a contactar a la brevedad.</span>
+                <strong>¡Listo!</strong>
+                <span>
+                  Te enviamos tus credenciales de acceso a{' '}
+                  <strong>{email}</strong>. Revisá tu bandeja de entrada y también
+                  la carpeta de spam/no deseado.
+                </span>
               </div>
             ) : (
               <form className="landing-subscribe-form" onSubmit={handleSubscribe}>
@@ -268,7 +278,7 @@ export function LandingPage() {
                   disabled={status === 'loading'}
                 />
                 <button type="submit" disabled={status === 'loading'}>
-                  {status === 'loading' ? 'Enviando…' : 'Solicitar demo'}
+                  {status === 'loading' ? 'Enviando…' : 'Solicitar acceso'}
                 </button>
               </form>
             )}

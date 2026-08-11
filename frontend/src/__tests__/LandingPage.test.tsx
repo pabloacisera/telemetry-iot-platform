@@ -70,14 +70,17 @@ describe('LandingPage', () => {
     renderLanding();
 
     await user.type(screen.getByLabelText('Correo electrónico'), 'cliente@planta.com');
-    await user.click(screen.getByRole('button', { name: 'Solicitar demo' }));
+    await user.click(screen.getByRole('button', { name: 'Solicitar acceso' }));
 
     await waitFor(() => {
       expect(api.post).toHaveBeenCalledWith('/landing/subscribe', {
         email: 'cliente@planta.com',
       });
     });
-    expect(await screen.findByText('¡Gracias!')).toBeInTheDocument();
+    expect(await screen.findByText('¡Listo!')).toBeInTheDocument();
+    expect(screen.getByText(/Revisá tu bandeja de entrada/)).toBeInTheDocument();
+    expect(screen.getByText(/spam\/no deseado/)).toBeInTheDocument();
+    expect(screen.getByText('cliente@planta.com')).toBeInTheDocument();
   }, 15000);
 
   it('shows an error message when the subscription request fails', async () => {
@@ -86,8 +89,24 @@ describe('LandingPage', () => {
     renderLanding();
 
     await user.type(screen.getByLabelText('Correo electrónico'), 'cliente@planta.com');
-    await user.click(screen.getByRole('button', { name: 'Solicitar demo' }));
+    await user.click(screen.getByRole('button', { name: 'Solicitar acceso' }));
 
     expect(await screen.findByRole('alert')).toHaveTextContent(/No pudimos registrar/);
+  }, 15000);
+
+  it('shows a specific message when the backend responds 409', async () => {
+    (api.post as jest.Mock).mockRejectedValue({
+      response: { status: 409, data: { message: 'Ya existe una cuenta con este correo' } },
+    });
+    const user = userEvent.setup();
+    renderLanding();
+
+    await user.type(screen.getByLabelText('Correo electrónico'), 'cliente@planta.com');
+    await user.click(screen.getByRole('button', { name: 'Solicitar acceso' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /Ya tenés acceso con este correo/,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/spam/);
   }, 15000);
 });

@@ -12,6 +12,7 @@ CommandModule     publishes MQTT commands, correlates request_id ↔ ack via Tel
 RealtimeGateway   WebSocket (socket.io), rooms by motor_id, emits telemetry/status-change/alert/restart-progress
 CacheModule       Redis wrapper: live snapshot (read and write-through)
 RagModule         LiveContextService + KnowledgeSearchService (Mongo) + RagQueryService (orchestrates + Groq LLM)
+LandingModule     public POST /landing/subscribe: creates a user (role LANDING_DEMO_ROLE) + welcome email via Resend
 ScheduleModule    @nestjs/schedule — daily job: create future partition → aggregate (catch-up) → verify → drop → log result
 ```
 

@@ -4,7 +4,8 @@
 A real-time monitoring system for 15 industrial motors, each with 3 sensors (temperature, vibration, current),
 that detects anomalies, alerts operators, and if no one intervenes, acts autonomously (restarts or disables
 the motor). Includes a natural language assistant (RAG) that answers questions about the current plant state,
-and Grafana for historical data.
+and Grafana for historical data. The public landing page offers self-service demo access: a visitor submits
+an email, the backend creates a user with a temporary password and emails the credentials (see `27-landing-demo-access.md`).
 
 ## Why each piece exists (summary to memorize)
 | Piece | Why it's here |
@@ -17,6 +18,7 @@ and Grafana for historical data.
 | React + Redux Toolkit | Frontend with explicit global state, required by the job position. |
 | Grafana | Historical aggregated visualization. NOT a database, only queries MySQL. |
 | RAG (Mongo + LLM) | Answers in natural language about the plant's NOW, does not replace Grafana. |
+| Resend | Transactional email used by the landing signup to deliver demo-access credentials. |
 
 ## How to read this documentation
 1. `01-architecture.md` — general overview and container diagram.
@@ -37,3 +39,4 @@ and Grafana for historical data.
 16. `17-grafana-guide.md` — Grafana observability: provisioned dashboards, historical queries, alerts panel.
 17. `18-caching-guide.md` — caching & performance: Redis write-through, rate limiting, fallback strategy.
 18. `19-deployment-guide.md` — deployment & infra: local Docker workflow, Ansible, container architecture.
+19. `27-landing-demo-access.md` — self-service demo signup from the public landing (user creation + welcome email via Resend).

@@ -151,6 +151,7 @@ Los motores creados en runtime se guardan en `simulator/data/hot_motors.csv`. Al
 | `RagModule` | `src/rag/` | Asistente IA con RAG |
 | `RealtimeModule` | `src/realtime/` | Gateway WebSocket (Socket.IO) |
 | `CacheModule` | `src/cache/` | Redis: snapshots, locks, estado |
+| `LandingModule` | `src/landing/` | Alta self-service de demo: crea usuario + mail de credenciales (Resend) |
 | `PrismaModule` | `src/prisma/` | Cliente MySQL |
 
 ### Rutas HTTP
@@ -175,6 +176,7 @@ Los motores creados en runtime se guardan en `simulator/data/hot_motors.csv`. Al
 | DELETE | `/config/motors/:id` | admin | Eliminar motor + deprovision MQTT |
 | PATCH | `/config/motors/:motorId/sensors/:sensorId/thresholds` | admin | Editar umbrales de sensor |
 | POST | `/rag/query` | Todos | Pregunta al asistente IA |
+| POST | `/landing/subscribe` | Público | Alta de demo: crea usuario viewer y envía credenciales por mail (Resend) |
 
 ### Servicios principales del pipeline de telemetria
 
@@ -531,6 +533,33 @@ Backend evalua telemetria
 ### Documentacion existente
 - `docs/00-overview.md` a `docs/24-config-module.md` — 25 archivos de documentacion
 - `CHANGELOG-2026-08-05.md` — cambios recientes (hot-reload, alarmas industriales, episodios)
+
+---
+
+## 11. Landing / Acceso a Demo (self-service)
+
+Endpoint público `POST /landing/subscribe` — no requiere autenticacion.
+
+```
+Prospecto -> Landing (frontend) -> POST /landing/subscribe { email }
+  -> Backend: normaliza email (trim + lowercase)
+  -> Si ya existe usuario con ese email  -> 409 "Ya existe una cuenta con este correo"
+  -> Si RESEND_API_KEY no configurada    -> 503 (no crea nada)
+  -> Genera password temporal de 8 caracteres (alfanumerico, mayus + minus)
+  -> bcrypt(password, 10) -> user.create({ email, passwordHash, role: LANDING_DEMO_ROLE })
+  -> Redis: SADD landing:leads <email> (auditoria, no bloquea si falla)
+  -> Resend: mail de bienvenida con Correo / Usuario / Contraseña + aviso de spam
+  -> 201 { granted: true, email }
+Prospecto -> POST /auth/login con email + password recibida -> entra como viewer
+```
+
+Puntos clave:
+
+- La password temporal **solo viaja en el mail**; nunca se loguea ni se devuelve en la API.
+- El rol de las cuentas creadas se configura con `LANDING_DEMO_ROLE` (default `viewer`).
+- Si el mail ya existe, el frontend muestra "Ya tenés acceso con este correo" y sugiere revisar spam.
+- Sandbox de Resend (`onboarding@resend.dev`) solo entrega al correo verificado en la cuenta Resend;
+  para produccion se usa un dominio verificado (`RESEND_FROM`).
 
 ---
 
