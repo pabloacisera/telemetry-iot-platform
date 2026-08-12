@@ -25,6 +25,7 @@ from simulator.command_handler import (
     handle_motor_command,
     handle_sensor_command,
     handle_fault_injection,
+    _publish_ack,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,11 @@ class MotorSimulator:
         self.broker_host = broker_host
         self.broker_port = broker_port
         self.state = "powered_on"
+        # Anti-short-cycle countdown (seconds) — survives MQTT reconnects so an
+        # interrupted restart resumes where it left off instead of stalling forever.
+        self.restart_seconds_remaining = 0
+        # Original RESTART command request_id, echoed in the final ack.
+        self.pending_restart_request_id: str | None = None
         self.sensors = self._create_sensors()
 
     def _create_sensors(self) -> dict[SensorType, Sensor]:
@@ -81,7 +87,7 @@ class MotorSimulator:
         }
 
     async def run(self) -> None:
-        """Main loop: connect, publish online status, run telemetry + commands."""
+        """Main loop: connect, publish current state, run telemetry + commands."""
         while True:
             try:
                 lwt = self._build_lwt()
@@ -94,18 +100,30 @@ class MotorSimulator:
                     identifier=f"esp32_motor{self.motor_id}",
                 ) as client:
                     logger.info(f"Motor {self.motor_id}: connected")
-                    await self._publish_status(client, "online")
+                    # Publish our REAL state: an off/restarting motor must not
+                    # claim to be online, otherwise the backend will mark it
+                    # healthy while it silently stops sending telemetry.
+                    await self._publish_status(client, self._liveness_state())
                     await self._subscribe(client)
 
                     async with asyncio.TaskGroup() as tg:
                         tg.create_task(self._telemetry_loop(client))
                         tg.create_task(self._command_listener(client))
+                        # Runs any pending anti-short-cycle countdown (triggered by
+                        # a RESTART command or resumed after a reconnect). Lives
+                        # inside the TaskGroup so a connection loss cancels it
+                        # cleanly while state persists on the instance.
+                        tg.create_task(self._restart_supervisor(client))
 
             except MqttError as e:
                 logger.warning(f"Motor {self.motor_id}: connection lost ({e})")
                 await asyncio.sleep(self._reconnection_delay())
             except asyncio.CancelledError:
                 break
+
+    def _liveness_state(self) -> str:
+        """MQTT status we should advertise: online only when fully powered on."""
+        return "online" if self.state == "powered_on" else "offline"
 
     def _build_lwt(self) -> Will:
         """Build the Last Will and Testament (broker publishes this if we drop)."""
@@ -158,6 +176,52 @@ class MotorSimulator:
                 json.dumps(payload).encode(),
                 qos=1,
             )
+
+    async def _restart_supervisor(self, client: Client) -> None:
+        """Run any pending anti-short-cycle countdown to completion.
+
+        Listens for a restart being requested (via command) or already pending
+        (resumed after a reconnect). Kept as a dedicated task inside the
+        TaskGroup so it is cancelled on connection loss without losing the
+        countdown state stored on the instance.
+        """
+        while True:
+            if self.state in ("shutting_down", "restarting"):
+                await self._restart_countdown(client)
+            else:
+                await asyncio.sleep(1)
+
+    async def _restart_countdown(self, client: Client) -> None:
+        """Execute the countdown: brief shutdown → 100s wait → power on."""
+        if self.state == "shutting_down":
+            self.state = "restarting"
+            if self.restart_seconds_remaining == 0:
+                self.restart_seconds_remaining = 100
+
+        topic_prefix = f"plant/motor/{self.motor_id}"
+        while self.restart_seconds_remaining > 0 and self.state == "restarting":
+            progress = json.dumps({
+                "motor_id": self.motor_id,
+                "phase": "restarting",
+                "seconds_remaining": self.restart_seconds_remaining,
+            })
+            await client.publish(
+                f"{topic_prefix}/restart-progress", progress.encode(), qos=0
+            )
+            await asyncio.sleep(1)
+            self.restart_seconds_remaining -= 1
+
+        # A STOP during the countdown wins: never force power back on.
+        if self.state != "restarting":
+            return
+
+        # Countdown finished: power back on and report online.
+        self.state = "powered_on"
+        request_id = self.pending_restart_request_id or "restart-complete"
+        self.pending_restart_request_id = None
+        await self._publish_status(client, "online")
+        await _publish_ack(client, self.motor_id, "cmd/ack", request_id)
+        logger.info(f"Motor {self.motor_id}: restart complete, back online")
 
     def _build_telemetry_payload(self) -> dict:
         """Generate a telemetry payload from all 3 sensors."""

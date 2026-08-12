@@ -53,3 +53,6 @@ PROMPT-PARA-KIRO.md
 
 # Local agent tooling
 .opencode/
+
+# Working backup (contains local creds) — not for the repo
+docker-compose.yml.bak

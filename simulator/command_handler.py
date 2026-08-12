@@ -36,13 +36,19 @@ async def handle_motor_command(
     if action == "stop":
         logger.info(f"Motor {sim.motor_id}: received STOP command")
         sim.state = "powered_off"
+        sim.restart_seconds_remaining = 0
         # Publish offline status so backend knows immediately
         await sim._publish_status(client, "offline")
         await _publish_ack(client, sim.motor_id, "cmd/ack", request_id)
 
     elif action == "restart":
         logger.info(f"Motor {sim.motor_id}: received RESTART command")
-        asyncio.create_task(_restart_sequence(sim, client, request_id))
+        # Mark the anti-short-cycle sequence; the countdown itself runs in the
+        # simulator's TaskGroup so it survives connection loss and resumes after
+        # a reconnect (state is preserved on the instance).
+        sim.state = "shutting_down"
+        sim.restart_seconds_remaining = 100
+        sim.pending_restart_request_id = request_id
 
 
 async def handle_sensor_command(
@@ -90,37 +96,6 @@ def handle_fault_injection(sim: "MotorSimulator", payload: dict) -> None:
 
     sim.sensors[sensor_type].inject_fault(fault_mode)
     logger.info(f"Motor {sim.motor_id}: fault → {sensor_type.value}/{fault_mode.value}")
-
-
-async def _restart_sequence(
-    sim: "MotorSimulator", client: Client, request_id: str
-) -> None:
-    """Execute the full restart: shutdown → 100s wait → power on."""
-    # Phase 1: shutting down (brief network/ack time)
-    sim.state = "shutting_down"
-    await asyncio.sleep(1)
-
-    # Phase 2: restarting with real 100s anti-short-cycle timer
-    sim.state = "restarting"
-    topic_prefix = f"plant/motor/{sim.motor_id}"
-
-    for seconds_remaining in range(100, 0, -1):
-        progress = json.dumps({
-            "motor_id": sim.motor_id,
-            "phase": "restarting",
-            "seconds_remaining": seconds_remaining,
-        })
-        await client.publish(
-            f"{topic_prefix}/restart-progress", progress.encode(), qos=0
-        )
-        await asyncio.sleep(1)
-
-    # Phase 3: powered back on
-    sim.state = "powered_on"
-    # Publish online status
-    await sim._publish_status(client, "online")
-    await _publish_ack(client, sim.motor_id, "cmd/ack", request_id)
-    logger.info(f"Motor {sim.motor_id}: restart complete, back online")
 
 
 async def _publish_ack(

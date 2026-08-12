@@ -32,6 +32,15 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
   /** Grace window timers: motor_id → timeout handle. */
   private disconnectionTimers: Map<number, NodeJS.Timeout> = new Map();
 
+  /**
+   * Motors that sent an "online" status but whose health is not yet confirmed
+   * by real telemetry. An "online" claim alone is NOT proof of health: a device
+   * can reconnect to the broker while its firmware is stuck/powered off. Only
+   * actual telemetry (handled in handleTelemetry) clears this set and moves the
+   * motor to healthy.
+   */
+  private pendingOnlineConfirmation: Set<number> = new Set();
+
   /** Lookup: "motorId:sensorType" → motor_sensor_id. */
   private sensorLookup: Map<string, number> = new Map();
 
@@ -49,6 +58,11 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     await this.buildLookups();
+    // Arm the liveness watchdog for every known motor from the start, so a
+    // backend restart immediately begins detecting motors that report nothing.
+    for (const motorId of this.connectionTypes.keys()) {
+      this.startDisconnectionTimer(motorId);
+    }
     this.connectToBroker();
   }
 
@@ -196,7 +210,32 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
     const recordedAt = new Date(dto.timestamp);
     const motorId = dto.motor_id;
 
-    this.clearDisconnectionTimer(motorId);
+    // Real telemetry is the ground truth for health. If the motor reported
+    // "online" earlier but no data had been seen yet, this confirms it.
+    if (this.pendingOnlineConfirmation.delete(motorId)) {
+      const motor = await this.prisma.motor.findUnique({
+        where: { id: motorId },
+      });
+      if (
+        motor &&
+        (motor.status === 'manual_shutdown' ||
+          motor.status === 'restarting' ||
+          motor.status === 'shutting_down')
+      ) {
+        await this.statusTransition.transitionMotor(
+          motorId,
+          motor.status,
+          'healthy',
+        );
+        // Update in-memory status + reset evaluation window
+        this.evaluationService.setMotorStatus(motorId, 'healthy');
+        this.evaluationService.resetWindow(motorId);
+        this.logger.log(`Motor ${motorId}: healthy confirmed by telemetry`);
+      }
+    }
+
+    // Motor is alive: (re)arm the liveness watchdog.
+    this.startDisconnectionTimer(motorId);
 
     if (dto.temperature_c !== undefined) {
       const id = this.sensorLookup.get(`${motorId}:temperature`);
@@ -249,26 +288,16 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
         this.evaluationService.setMotorStatus(motorId, 'manual_shutdown');
       }
     } else if (state === 'online') {
-      this.clearDisconnectionTimer(motorId);
-      // Only transition to healthy if motor was manually stopped or restarting
-      const motor = await this.prisma.motor.findUnique({
-        where: { id: motorId },
-      });
-      if (
-        motor &&
-        (motor.status === 'manual_shutdown' ||
-          motor.status === 'restarting' ||
-          motor.status === 'shutting_down')
-      ) {
-        await this.statusTransition.transitionMotor(
-          motorId,
-          motor.status,
-          'healthy',
-        );
-        // Update in-memory status + reset evaluation window
-        this.evaluationService.setMotorStatus(motorId, 'healthy');
-        this.evaluationService.resetWindow(motorId);
-      }
+      // An "online" claim alone is not proof of health: a device can reconnect
+      // while its firmware is stuck or it was left powered off. Require the
+      // first real telemetry message to transition the motor to healthy.
+      this.pendingOnlineConfirmation.add(motorId);
+      // Arm the liveness watchdog: if no telemetry arrives within the grace
+      // window, the motor is marked offline again.
+      this.startDisconnectionTimer(motorId);
+      this.logger.log(
+        `Motor ${motorId}: online received, awaiting telemetry to confirm healthy`,
+      );
     }
   }
 
@@ -300,21 +329,61 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
       secondsRemaining,
     });
 
+    // Motor is alive while the countdown runs: keep the watchdog armed.
+    // (Each progress message re-arms the timer, so a stalled countdown with no
+    // further progress lets the watchdog fire and mark the motor offline.)
+    this.startDisconnectionTimer(motorId);
+
     // When countdown finishes, the 'online' status message will trigger transition to 'healthy'
   }
 
-  /** Start grace window timer (20s WiFi / 5s LAN). */
+  /**
+   * Arm the liveness watchdog for a motor. Each time real data arrives
+   * (telemetry or restart-progress) the timer is re-armed. If it fires, the
+   * motor has been silent beyond the grace window and is marked offline.
+   *
+   * The grace window must exceed the telemetry interval (15s) to avoid false
+   * positives.
+   */
   private startDisconnectionTimer(motorId: number): void {
-    const connType = this.connectionTypes.get(motorId) || 'wifi';
-    const graceMs = connType === 'lan' ? 5000 : 20000;
+    this.clearDisconnectionTimer(motorId);
+
+    const graceMs = this.configService.get<number>(
+      'MQTT_DISCONNECT_GRACE_MS',
+      30_000,
+    );
 
     const timer = setTimeout(() => {
       void (async () => {
+        const motor = await this.prisma.motor.findUnique({
+          where: { id: motorId },
+          select: { status: true },
+        });
+        if (!motor) return;
+
+        // Already offline: nothing to do.
+        if (motor.status === 'manual_shutdown') return;
+
+        // In restarting/shutting_down this means the countdown stalled (no
+        // progress re-armed the timer): treat the motor as gone.
+        await this.statusTransition.transitionMotor(
+          motorId,
+          motor.status,
+          'manual_shutdown',
+        );
+        // Update in-memory status in evaluation service
+        this.evaluationService.setMotorStatus(motorId, 'manual_shutdown');
+        this.pendingOnlineConfirmation.delete(motorId);
+
         for (const [key, sensorId] of this.sensorLookup.entries()) {
           if (key.startsWith(`${motorId}:`)) {
             await this.evaluationService.onSensorDisconnected(sensorId);
           }
         }
+
+        this.logger.warn(
+          `Motor ${motorId}: no telemetry for ${graceMs}ms, marked manual_shutdown`,
+        );
       })();
     }, graceMs);
 

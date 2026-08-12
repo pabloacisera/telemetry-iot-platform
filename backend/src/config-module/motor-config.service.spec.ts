@@ -351,12 +351,20 @@ describe('MotorConfigService', () => {
 
       const result = await service.resetThresholds(1, 11);
 
-      expect(result).toEqual({ id: 11, healthyMax: 70, warningMax: 80, criticalMax: 90 });
-      expect(telemetryEvaluation.updateSensorThresholds).toHaveBeenCalledWith(11, {
+      expect(result).toEqual({
+        id: 11,
         healthyMax: 70,
         warningMax: 80,
         criticalMax: 90,
       });
+      expect(telemetryEvaluation.updateSensorThresholds).toHaveBeenCalledWith(
+        11,
+        {
+          healthyMax: 70,
+          warningMax: 80,
+          criticalMax: 90,
+        },
+      );
     });
 
     it('should throw NotFoundException if sensor not found for motor', async () => {

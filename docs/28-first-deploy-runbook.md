@@ -78,12 +78,17 @@ Al terminar: `https://telemetry.artisandevs.site` debe servir la landing.
 # Usuarios de demo + motores/sensores (3 standards, 15 motores, 45 sensores, 3 usuarios)
 docker exec backend-nestjs node dist-seed/seed.js
 
-# Base de conocimiento RAG (vectoriza 20 fragments a Mongo `rag_knowledge`)
+# Base de conocimiento RAG (vectoriza 200 fragments a Mongo `rag_knowledge`)
 docker exec backend-nestjs node dist-seed/seed-embeddings.js
+
+# IMPRESCINDIBLE: el seed escribe directo en la BD y el backend carga los sensores
+# en memoria solo al arrancar. Sin este restart el dashboard aparece VACÍO.
+docker restart backend-nestjs
 ```
 
 > Las rutas son las que realmente quedan dentro de la imagen (`/app/dist-seed/`).
 > El seed de RAG borra y reinserta las `embeddings`; correrlo de nuevo es seguro (idempotente).
+> El seed de embeddings tarda ~4-5 min (vectoriza con onnxruntime); es normal.
 
 ### 3.2 Smoke test
 

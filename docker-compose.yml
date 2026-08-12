@@ -8,6 +8,12 @@ services:
       context: ./mosquitto
       dockerfile: Dockerfile
     container_name: broker-mqtt
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "1883:1883"
     volumes:
@@ -26,6 +32,16 @@ services:
   telemetry-db-mysql:
     image: mysql:8.0
     container_name: db-mysql
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command:
+      - "--skip-log-bin"
+      - "--innodb-buffer-pool-size=128M"
+      - "--performance-schema=OFF"
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-telemetry_db}
@@ -44,6 +60,13 @@ services:
   telemetry-mongo-ragstore:
     image: mongo:7
     container_name: mongo-ragstore
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
     environment:
       MONGO_INITDB_DATABASE: rag_knowledge
     volumes:
@@ -59,6 +82,12 @@ services:
   telemetry-redis-cache:
     image: redis:7-alpine
     container_name: redis-cache
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -78,6 +107,12 @@ services:
       args:
         VITE_GRAFANA_URL: ${VITE_GRAFANA_URL:-http://localhost:3001/grafana/}
     container_name: frontend-react
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "5173:5173"
     networks:
@@ -88,12 +123,19 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: backend-nestjs
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     volumes:
       - ./mosquitto/password_file:/mosquitto/password_file
       - ./mosquitto/acl_file:/mosquitto/acl_file
     env_file:
       - .env
     environment:
+      NODE_OPTIONS: --max-old-space-size=384
       DATABASE_URL: mysql://${MYSQL_USER:-telemetry_user}:${MYSQL_PASSWORD}@db-mysql:3306/${MYSQL_DATABASE:-telemetry_db}
       REDIS_HOST: redis-cache
       REDIS_PORT: 6379
@@ -117,6 +159,12 @@ services:
       context: ./simulator
       dockerfile: Dockerfile
     container_name: simulator-python
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     env_file:
       - .env
     environment:
@@ -133,6 +181,12 @@ services:
   telemetry-dashboard-grafana:
     image: grafana/grafana:11.0.0
     container_name: dashboard-grafana
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     ports:
       - "3001:3000"
     environment:
