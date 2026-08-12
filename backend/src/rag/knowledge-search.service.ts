@@ -23,7 +23,7 @@ export class KnowledgeSearchService implements OnModuleInit {
   ) {
     this.similarityThreshold = this.configService.get<number>(
       'RAG_SIMILARITY_THRESHOLD',
-      0.65,
+      0.55,
     );
   }
 
@@ -84,7 +84,7 @@ export class KnowledgeSearchService implements OnModuleInit {
    */
   async search(
     question: string,
-    topK = 3,
+    topK = 5,
   ): Promise<
     {
       chunkText: string;

@@ -38,6 +38,7 @@ export class RagQueryService {
   async query(
     motorId: number | undefined,
     question: string,
+    history: { role: 'user' | 'assistant'; content: string }[] = [],
   ): Promise<RagResponse> {
     const warnings: string[] = [];
     const sources: string[] = [];
@@ -123,7 +124,7 @@ export class RagQueryService {
       knowledgeBlock,
     );
 
-    const llmResponse = await this.callGroq(systemPrompt, userPrompt);
+    const llmResponse = await this.callGroq(systemPrompt, userPrompt, history);
 
     // Step 6: Anti-hallucination filter
     const filteredAnswer = this.applyAntiHallucinationFilter(
@@ -153,19 +154,23 @@ export class RagQueryService {
 
 Si la pregunta del operario no menciona explícitamente que quiere diagnóstico o resolución, dáselos igual — siempre. Un operario que pregunta "¿cómo está el motor?" necesita saber qué hacer, no solo una descripción.
 
+REGLA DE ORO: El operario YA VE los valores en el dashboard. Tu valor agregado es el POR QUÉ y el QUÉ HACER. No rellenes la respuesta repitiendo en tablas todo lo que ya está en pantalla.
+
 REGLAS OBLIGATORIAS:
 1. Responde SIEMPRE en español.
 2. Estructura cada respuesta en dos bloques cuando haya un problema:
    - **Diagnóstico**: qué falla, qué sensor la origina, causa probable.
    - **Pasos a seguir**: acciones concretas ordenadas por prioridad. Usa lista numerada.
-3. Si todo está normal, confirmalo brevemente con los valores y di que no se requiere acción.
-4. Siempre mostrá los valores numéricos reales de los sensores, incluso si están en falla. Si un sensor está en falla, mostrá el valor con ⚠️ y aclarás que no es confiable — pero NUNCA omitas el número ni escribas "No confiable" en su lugar.
-5. Compará los valores actuales con los umbrales. Di explícitamente si cada valor está normal, en advertencia o crítico.
+3. Si todo está normal, confirmalo brevemente y di que no se requiere acción.
+4. NO repitas en tablas todos los valores que el operario ya ve en el dashboard. Mostrá SOLO los valores que aportan al diagnóstico: los anormales, los que están en evolución (tendencia), o las correlaciones entre señales. Si un sensor está en falla, mostrá su valor con ⚠️ indicando que puede no ser confiable — pero nunca omitas el número ni escribas "No confiable" en su lugar.
+5. Compará los valores actuales con los umbrales Y con su tendencia (subiendo/estable/bajando). Decí explícitamente si cada valor relevante está normal, en advertencia o crítico.
 6. Para preguntas históricas (semana pasada, tendencias largas), redirigí a Grafana.
 7. Nunca inventes valores, causas ni procedimientos que no estén respaldados por los datos del contexto o por normas industriales conocidas (ISO 10816-3, NEMA MG-1, etc.). Cuando cites una norma, mencioná la fuente.
 8. Usá fechas y horas legibles (nunca ISO crudo).
 9. FORMATO: Para datos numéricos, comparaciones y valores vs umbrales, usá TABLAS MARKDOWN. Para pasos de acción, usá lista numerada. Usá **negrita** para valores críticos o acciones urgentes.
 10. Nunca digas "no tengo información" si los datos están en el contexto que recibiste.
+11. Si TODOS los sensores de un motor entran en falla al mismo tiempo, la causa más probable es de COMUNICACIÓN o del microcontrolador (ESP32): corte de red, reinicio del ESP32 o pérdida de alimentación. NO son tres fallas físicas independientes de sensores. Los valores que se ven son los últimos recibidos antes del corte (datos congelados). Explicá esto y priorizá la verificación de la conexión/poder del MCU ANTES que el reemplazo de sensores.
+12. Si el operario pega datos en la pregunta (series de números, horas, tablas), usalos como insumo del diagnóstico: interpretalos, no los ignores ni los repitas sin análisis.
 
 COMPORTAMIENTO POR ESTADO DEL MOTOR:
 - **Saludable**: confirmar operación normal con tabla de valores. Decir "no se requiere acción".
@@ -214,10 +219,11 @@ DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 hora
     return prompt;
   }
 
-  /** Call Groq LLM via REST API. */
+  /** Call Groq LLM via REST API. Includes the recent conversation as context. */
   private async callGroq(
     systemPrompt: string,
     userPrompt: string,
+    history: { role: 'user' | 'assistant'; content: string }[],
   ): Promise<string> {
     if (!this.groqApiKey) {
       this.logger.warn(
@@ -225,6 +231,19 @@ DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 hora
       );
       return 'El asistente de IA no está configurado (falta la clave de API). Contactá al administrador.';
     }
+
+    const messages: { role: string; content: string }[] = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Recent conversation turns give the LLM context for follow-up questions.
+    for (const turn of history) {
+      if (turn.content && turn.content.length > 0) {
+        messages.push({ role: turn.role, content: turn.content });
+      }
+    }
+
+    messages.push({ role: 'user', content: userPrompt });
 
     try {
       const response = await fetch(
@@ -237,10 +256,7 @@ DATOS DISPONIBLES: Tenés acceso al historial de lecturas de las últimas 4 hora
           },
           body: JSON.stringify({
             model: this.groqModel,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
+            messages,
             temperature: 0.3,
             max_tokens: 1024,
           }),

@@ -22,7 +22,9 @@ export function RagQueryBox({ motorId }: RagQueryBoxProps) {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (!question.trim()) return;
-    dispatch(askRag({ motorId, question: question.trim() }));
+    // Send the existing turns so the assistant has conversation context.
+    // The current question is not included (it's appended by the pending action).
+    dispatch(askRag({ motorId, question: question.trim(), history: messages }));
     setQuestion('');
   };
 

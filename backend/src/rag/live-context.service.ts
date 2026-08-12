@@ -20,6 +20,9 @@ interface SensorReadingHistory {
   minValue: number | null;
   maxValue: number | null;
   anomalyCount: number;
+  deltaValue: number | null;
+  direction: 'rising' | 'falling' | 'stable';
+  pctAboveWarning: number | null;
 }
 
 interface LiveContext {
@@ -27,6 +30,8 @@ interface LiveContext {
   motorCode: string;
   motorName: string;
   motorStatus: string;
+  ratedCurrentA: number;
+  insulationClass: string;
   sensors: SensorSnapshot[];
   sensorHistory: SensorReadingHistory[];
   recentAlerts: { type: string; triggeredAt: Date; resolvedAt: Date | null }[];
@@ -35,6 +40,12 @@ interface LiveContext {
     toStatus: string | null;
     changedAt: Date;
   }[];
+  trips24h: {
+    count: number;
+    lastTripAt: Date | null;
+    minutesSinceLastTrip: number | null;
+  };
+  alarms24h: number;
 }
 
 /**
@@ -106,9 +117,31 @@ export class LiveContextService {
       const values = readings.map((r) => r.value);
       const anomalyCount = readings.filter((r) => r.isAnomalous).length;
 
+      const chronological = readings.reverse();
+      const firstValue = chronological[0]?.value ?? null;
+      const lastValue = chronological[chronological.length - 1]?.value ?? null;
+
+      // Trend: delta first→last, direction with a 5% deadband around the first value
+      let deltaValue: number | null = null;
+      let direction: 'rising' | 'falling' | 'stable' = 'stable';
+      if (firstValue !== null && lastValue !== null) {
+        deltaValue = Math.round((lastValue - firstValue) * 100) / 100;
+        const deadband = Math.abs(firstValue) * 0.05;
+        if (deltaValue > deadband) direction = 'rising';
+        else if (deltaValue < -deadband) direction = 'falling';
+      }
+
+      const pctAboveWarning =
+        values.length > 0
+          ? Math.round(
+              (values.filter((v) => v > ms.warningMax).length / values.length) *
+                100,
+            )
+          : null;
+
       sensorHistory.push({
         sensorType: ms.sensorType,
-        readings: readings.reverse(), // chronological order
+        readings: chronological,
         avgValue:
           values.length > 0
             ? values.reduce((a, b) => a + b, 0) / values.length
@@ -116,6 +149,9 @@ export class LiveContextService {
         minValue: values.length > 0 ? Math.min(...values) : null,
         maxValue: values.length > 0 ? Math.max(...values) : null,
         anomalyCount,
+        deltaValue,
+        direction,
+        pctAboveWarning,
       });
     }
 
@@ -141,15 +177,52 @@ export class LiveContextService {
       select: { fromStatus: true, toStatus: true, changedAt: true },
     });
 
+    // Block 5: Event analytics (last 24h) — trips and alarms
+    const dayWindowStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const lastTrip = await this.prisma.alert.findFirst({
+      where: {
+        motorId,
+        type: 'motor_trip',
+        triggeredAt: { gte: dayWindowStart },
+      },
+      orderBy: { triggeredAt: 'desc' },
+      select: { triggeredAt: true },
+    });
+    const trips24h = await this.prisma.alert.count({
+      where: {
+        motorId,
+        type: 'motor_trip',
+        triggeredAt: { gte: dayWindowStart },
+      },
+    });
+    const alarms24h = await this.prisma.alert.count({
+      where: {
+        motorId,
+        type: 'motor_alarm',
+        triggeredAt: { gte: dayWindowStart },
+      },
+    });
+    const lastTripAt = lastTrip?.triggeredAt ?? null;
+
     return {
       motorId,
       motorCode: motor.code,
       motorName: motor.name,
       motorStatus: motor.status,
+      ratedCurrentA: motor.ratedCurrentA,
+      insulationClass: motor.insulationClass,
       sensors,
       sensorHistory,
       recentAlerts,
       recentStatusChanges,
+      trips24h: {
+        count: trips24h,
+        lastTripAt,
+        minutesSinceLastTrip: lastTripAt
+          ? Math.floor((Date.now() - lastTripAt.getTime()) / 60000)
+          : null,
+      },
+      alarms24h,
     };
   }
 
@@ -212,6 +285,13 @@ export class LiveContextService {
       `## Motor ${ctx.motorCode} (${ctx.motorName}) — Estado actual: ${statusMap[ctx.motorStatus] || ctx.motorStatus}`,
     );
     lines.push('');
+    lines.push(
+      `- Datos de placa: corriente nominal ${ctx.ratedCurrentA} A, clase de aislamiento ${ctx.insulationClass}`,
+    );
+    lines.push(
+      `- Eventos últimas 24h: ${ctx.trips24h.count} trip(s)${ctx.trips24h.minutesSinceLastTrip !== null ? `, último hace ${ctx.trips24h.minutesSinceLastTrip} min` : ''}; ${ctx.alarms24h} alarma(s)`,
+    );
+    lines.push('');
     lines.push('### Sensores (valor actual)');
 
     for (const s of ctx.sensors) {
@@ -267,6 +347,15 @@ export class LiveContextService {
           `- ${name}: ${h.readings.length} lecturas | promedio: ${h.avgValue?.toFixed(2)} ${unit} | mín: ${h.minValue?.toFixed(2)} ${unit} | máx: ${h.maxValue?.toFixed(2)} ${unit} | anomalías: ${h.anomalyCount}`,
         );
 
+        const directionLabels: Record<string, string> = {
+          rising: '⬆️ subiendo',
+          falling: '⬇️ bajando',
+          stable: '➡️ estable',
+        };
+        lines.push(
+          `  Tendencia: ${directionLabels[h.direction]} (delta ${h.deltaValue !== null ? `${h.deltaValue > 0 ? '+' : ''}${h.deltaValue}` : 'n/d'} ${unit} en la ventana) | ${h.pctAboveWarning ?? 0}% de lecturas sobre umbral de advertencia`,
+        );
+
         // Include last 10 readings as a mini-table for the LLM
         const last10 = h.readings.slice(-10);
         const readingsStr = last10
@@ -277,6 +366,33 @@ export class LiveContextService {
           .join(', ');
         lines.push(`  Últimas 10: [${readingsStr}]`);
       }
+    }
+
+    // Cross-sensor correlation hints
+    const byType = new Map(ctx.sensorHistory.map((h) => [h.sensorType, h]));
+    const vib = byType.get('vibration');
+    const cur = byType.get('current');
+    const temp = byType.get('temperature');
+    if (
+      vib &&
+      cur &&
+      vib.direction === 'rising' &&
+      cur.direction === 'rising'
+    ) {
+      lines.push('');
+      lines.push(
+        '⚠️ Correlación: vibración y corriente suben simultáneamente → patrón típico de sobrecarga mecánica o fricción (rodamiento desgastado, carga atascada).',
+      );
+    } else if (
+      temp &&
+      cur &&
+      temp.direction === 'rising' &&
+      cur.direction === 'rising'
+    ) {
+      lines.push('');
+      lines.push(
+        '⚠️ Correlación: temperatura y corriente suben juntas → posible sobrecarga eléctrica o térmica sostenida.',
+      );
     }
 
     if (ctx.recentAlerts.length > 0) {

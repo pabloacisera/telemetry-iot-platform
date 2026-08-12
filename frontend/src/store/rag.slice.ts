@@ -17,13 +17,22 @@ const initialState: RagState = {
   loading: false,
 };
 
-/** Send a question to the RAG module and get a response. */
+/** Send a question to the RAG module and get a response.
+ * history: recent conversation turns (excluding the current question) so the
+ * assistant can answer follow-up questions with context. */
 export const askRag = createAsyncThunk(
   'rag/ask',
-  async (params: { motorId?: number; question: string }) => {
+  async (params: {
+    motorId?: number;
+    question: string;
+    history: RagMessage[];
+  }) => {
     const response = await api.post('/rag/query', {
       motor_id: params.motorId,
       question: params.question,
+      history: params.history
+        .slice(-6)
+        .map((m) => ({ role: m.role, content: m.content })),
     });
     return response.data as { answer: string };
   },

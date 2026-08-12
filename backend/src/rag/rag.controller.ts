@@ -14,6 +14,10 @@ export class RagController {
 
   @Post('query')
   async query(@Body() dto: RagQueryDto) {
-    return this.ragQueryService.query(dto.motor_id, dto.question);
+    return this.ragQueryService.query(
+      dto.motor_id,
+      dto.question,
+      dto.history ?? [],
+    );
   }
 }
