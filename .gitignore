@@ -50,3 +50,6 @@ simulator/data/hot_motors.csv
 CHANGELOG*.md
 SPRINT.md
 PROMPT-PARA-KIRO.md
+
+# Local agent tooling
+.opencode/
