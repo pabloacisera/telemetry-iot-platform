@@ -7,6 +7,12 @@ import { alertDismissed } from '../../store/alerts.slice';
 const TOAST_VISIBLE_MS = 8000;
 /** Milliseconds the fade-out animation lasts (must match CSS). */
 const TOAST_FADEOUT_MS = 800;
+/**
+ * Milliseconds to ignore hover after mount: a toast can mount UNDER a
+ * stationary cursor (top-right corner), which would fire mouseenter and pause
+ * the timer forever. Only real user hover pauses.
+ */
+const HOVER_GRACE_MS = 1000;
 
 /** Alert type labels in Spanish. */
 const ALERT_LABELS: Record<string, string> = {
@@ -77,8 +83,8 @@ interface Alert {
 
 /**
  * Single toast with auto-dismiss timer.
- * Timer pauses on hover and resumes on mouse-leave.
- * Fade-out animation runs before removal.
+ * Timer pauses on real hover (ignored for the first HOVER_GRACE_MS after mount)
+ * and resumes on mouse-leave. Fade-out animation runs before removal.
  */
 function AlertToast({ alert, onDismiss }: { alert: Alert; onDismiss: () => void }) {
   const [fading, setFading] = useState(false);
@@ -87,6 +93,7 @@ function AlertToast({ alert, onDismiss }: { alert: Alert; onDismiss: () => void 
   const pausedRef = useRef(false);
   const elapsedRef = useRef(0);
   const startedAtRef = useRef(0);
+  const mountedAtRef = useRef(0);
 
   function startTimer(remaining: number) {
     startedAtRef.current = Date.now();
@@ -102,6 +109,7 @@ function AlertToast({ alert, onDismiss }: { alert: Alert; onDismiss: () => void 
   }
 
   useEffect(() => {
+    mountedAtRef.current = Date.now();
     startedAtRef.current = Date.now();
     startTimer(TOAST_VISIBLE_MS);
     return () => clearTimers();
@@ -109,6 +117,7 @@ function AlertToast({ alert, onDismiss }: { alert: Alert; onDismiss: () => void 
 
   function handleMouseEnter() {
     if (fading || pausedRef.current) return;
+    if (Date.now() - mountedAtRef.current < HOVER_GRACE_MS) return;
     pausedRef.current = true;
     elapsedRef.current += Date.now() - startedAtRef.current;
     clearTimers();
@@ -162,7 +171,8 @@ function AlertToast({ alert, onDismiss }: { alert: Alert; onDismiss: () => void 
 /**
  * Alert toast stack — floating notifications in top-right corner.
  * Each toast auto-dismisses after TOAST_VISIBLE_MS with a fade-out animation.
- * Hover pauses the timer. Manual dismiss (✕) cancels and removes immediately.
+ * Hover pauses the timer (except during the first second after mount). Manual
+ * dismiss (✕) cancels and removes immediately.
  * Fed by WebSocket 'alert' events via the alertsSlice.
  */
 export function AlertBanner() {

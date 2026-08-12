@@ -58,6 +58,9 @@ interface RestartProgressEvent {
  */
 export const socketMiddleware: Middleware = (storeAPI) => {
   let socket: Socket | null = null;
+  // Seed the alert banner only once per session: every `connect` fires on each
+  // auto-reconnect, and re-seeding would re-toast the same unresolved alerts.
+  let alertsSeeded = false;
 
   // Dispara thunks (createAsyncThunk) cuyo tipo no encaja en Dispatch<UnknownAction>.
   const dispatchThunk = storeAPI.dispatch as unknown as (action: unknown) => unknown;
@@ -81,8 +84,11 @@ export const socketMiddleware: Middleware = (storeAPI) => {
 
     socket.on('connect', () => {
       console.log('[WS] Connected');
-      // Seed the alert banner with currently active alerts after (re)connect.
-      dispatchThunk(fetchActiveAlerts());
+      if (!alertsSeeded) {
+        alertsSeeded = true;
+        // Seed the alert banner with currently active alerts only once.
+        dispatchThunk(fetchActiveAlerts());
+      }
     });
 
     socket.on('disconnect', () => {
