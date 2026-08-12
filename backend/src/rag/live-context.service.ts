@@ -373,26 +373,56 @@ export class LiveContextService {
     const vib = byType.get('vibration');
     const cur = byType.get('current');
     const temp = byType.get('temperature');
+
+    // Sensor status by type — only reliable sensors can support correlations.
+    const statusByType = new Map(
+      ctx.sensors.map((s) => [s.sensorType, s.status]),
+    );
+    const isReliable = (type: string): boolean =>
+      !['fault', 'fault_persistent', 'stuck'].includes(
+        statusByType.get(type) ?? '',
+      );
+
     if (
       vib &&
       cur &&
       vib.direction === 'rising' &&
       cur.direction === 'rising'
     ) {
-      lines.push('');
-      lines.push(
-        '⚠️ Correlación: vibración y corriente suben simultáneamente → patrón típico de sobrecarga mecánica o fricción (rodamiento desgastado, carga atascada).',
-      );
+      if (isReliable('vibration') && isReliable('current')) {
+        lines.push('');
+        lines.push(
+          '⚠️ Correlación: vibración y corriente suben simultáneamente → patrón típico de sobrecarga mecánica o fricción (rodamiento desgastado, carga atascada).',
+        );
+      } else {
+        const faulted = ['vibration', 'current']
+          .filter((t) => !isReliable(t))
+          .join(' y ');
+        lines.push('');
+        lines.push(
+          `⚠️ Nota: la vibración y la corriente muestran tendencia creciente, pero el sensor de ${faulted} está en falla, por lo que esta correlación NO es confiable y no debe usarse como diagnóstico.`,
+        );
+      }
     } else if (
       temp &&
       cur &&
       temp.direction === 'rising' &&
       cur.direction === 'rising'
     ) {
-      lines.push('');
-      lines.push(
-        '⚠️ Correlación: temperatura y corriente suben juntas → posible sobrecarga eléctrica o térmica sostenida.',
-      );
+      if (isReliable('temperature') && isReliable('current')) {
+        lines.push('');
+        lines.push(
+          '⚠️ Correlación: temperatura y corriente suben juntas → posible sobrecarga eléctrica o térmica sostenida.',
+        );
+      } else {
+        const faulted = ['temperature', 'current']
+          .filter((t) => !isReliable(t))
+          .join(' y ');
+        lines.push('');
+        lines.push(
+          `⚠️ Nota: la temperatura y la corriente muestran tendencia creciente, pero el sensor de ${faulted} está en falla, por lo que esta correlación NO es confiable y no debe usarse como diagnóstico.`,
+        );
+      }
     }
 
     if (ctx.recentAlerts.length > 0) {

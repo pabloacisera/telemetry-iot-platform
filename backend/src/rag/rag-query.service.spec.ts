@@ -100,4 +100,76 @@ describe('RagQueryService', () => {
       expect(result).toContain('⚠️(sensor en falla)');
     });
   });
+
+  describe('callGroq — temperature', () => {
+    it('uses temperature 0.7 in the Groq request body', async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            choices: [{ message: { content: 'Respuesta de prueba' } }],
+          }),
+      });
+      global.fetch = fetchMock;
+
+      // callGroq is private; exercise it through query() with a question that
+      // yields no live context and no knowledge matches is impossible (early
+      // return), so use a motor context path with mocked deps.
+      const liveCtx = {
+        buildContext: jest.fn().mockResolvedValue({
+          motorId: 7,
+          motorCode: 'M-07',
+          motorName: 'Motor 7',
+          motorStatus: 'healthy',
+          ratedCurrentA: 10,
+          insulationClass: 'F',
+          sensors: [
+            {
+              motorSensorId: 1,
+              sensorType: 'vibration',
+              value: 2.5,
+              status: 'ok',
+              recordedAt: null,
+              healthyMax: 1.8,
+              warningMax: 4.5,
+              criticalMax: 7.1,
+            },
+          ],
+          sensorHistory: [],
+          recentAlerts: [],
+          recentStatusChanges: [],
+          trips24h: { count: 0, lastTripAt: null, minutesSinceLastTrip: null },
+          alarms24h: 0,
+        }),
+        formatForPrompt: jest.fn().mockReturnValue('CONTEXTO'),
+      } as unknown as LiveContextService;
+      const knowledge = {
+        search: jest.fn().mockResolvedValue([
+          {
+            topic: 'vibration_thresholds',
+            chunkText: 'ISO 10816-3 zone limits',
+            sourceReference: 'ISO 10816-3',
+          },
+        ]),
+      } as unknown as KnowledgeSearchService;
+
+      const svc = new RagQueryService(liveCtx, knowledge, {
+        get: (key: string, def?: string) =>
+          key === 'GROQ_API_KEY' ? 'test-key' : (def ?? ''),
+      } as unknown as ConfigService);
+
+      await svc.query(7, '¿Cómo está el motor?');
+
+      const fetchCalls = fetchMock.mock.calls as unknown as [
+        string,
+        { body: string },
+      ][];
+      const capturedBody = JSON.parse(fetchCalls[0][1].body) as Record<
+        string,
+        unknown
+      >;
+      expect(capturedBody).toHaveProperty('temperature', 0.7);
+      expect(capturedBody).toHaveProperty('max_tokens', 1024);
+    });
+  });
 });
