@@ -12,7 +12,7 @@ The auth module protects the REST API and WebSocket connections. It's built thir
 ```
 User logs in → POST /auth/login (email + password)
   → Server validates credentials (bcrypt compare)
-  → Returns: access token (JWT, 15min) in response body
+  → Returns: access token (JWT, 5h default) in response body
              refresh token (7 days) as httpOnly cookie
   → Frontend stores access token in Redux memory (NEVER localStorage)
 
@@ -32,7 +32,7 @@ Access token expires → Frontend gets 401 → auto-calls /auth/refresh → retr
 | Refresh in httpOnly cookie | Browser sends it automatically, JS cannot read it |
 | SameSite=Strict | Prevents CSRF (cookie only sent from same origin) |
 | Refresh rotation | Stolen token can only be used once; reuse triggers revocation |
-| 15min access TTL | Short window of exposure if somehow leaked |
+| 5h access TTL (configurable via `JWT_EXPIRES_IN`) | Covers the whole workday without re-login; exposure window bounded by the refresh flow |
 | 7-day refresh TTL | Reasonable session length without re-login |
 
 ## How authorization works (role-based)

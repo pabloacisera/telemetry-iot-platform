@@ -100,14 +100,21 @@ export class AuthController {
     return { message: 'Contraseña actualizada. Ya podés iniciar sesión.' };
   }
 
-  /** Set the refresh token as a secure httpOnly cookie. */
+  /**
+   * Set the refresh token as a secure httpOnly cookie.
+   *
+   * Path is '/' (not '/auth') because the frontend reaches the API through the
+   * '/api' prefix (Vite proxy / global Nginx). A cookie scoped to '/auth' is
+   * never sent for '/api/auth/refresh', which silently breaks token refresh
+   * and logs users out on every reload or access-token expiry.
+   */
   private setRefreshCookie(res: Response, token: string): void {
     res.cookie('refresh_token', token, {
       httpOnly: true,
       secure: true,
       sameSite: 'strict',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
-      path: '/auth',
+      path: '/',
     });
   }
 }

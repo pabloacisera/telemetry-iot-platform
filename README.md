@@ -140,11 +140,11 @@ Default credentials (seed): `admin@telemetry.com` / `admin123` (admin), `operato
 ## Testing
 
 ```bash
-# Backend — lint + typecheck + 78 tests
+# Backend — lint + typecheck + 119 tests
 cd backend && npm ci && npx eslint src/ --max-warnings 0 && npx tsc --noEmit && npx jest --forceExit
 
-# Frontend — typecheck + 20 tests
-cd frontend && npm ci && npx tsc -b && npx jest --ci
+# Frontend — lint + typecheck + 39 tests
+cd frontend && npm ci && npx eslint src/ --max-warnings 0 && npx tsc -b && npx jest --ci
 
 # Simulator
 cd simulator && pip install -r requirements-dev.txt && pytest tests/ -v
@@ -163,7 +163,7 @@ CI runs on every push via GitHub Actions (5 jobs: backend, frontend, simulator, 
 ├── grafana/          Provisioned dashboards and datasources (as code)
 ├── ansible/          Automated EC2 deployment playbook
 ├── mosquitto/        Broker config — auth, ACL, persistence
-├── docs/             25 markdown files — architecture, data model, guides
+├── docs/             31 markdown files — architecture, data model, guides
 └── .kiro/            Specs and steering rules used during development
 ```
 
@@ -171,12 +171,24 @@ CI runs on every push via GitHub Actions (5 jobs: backend, frontend, simulator, 
 
 ## Documentation
 
-The `docs/` folder has 25 files covering every layer of the system in detail:
+The `docs/` folder has 31 files covering every layer of the system in detail:
 
+- [`00-overview.md`](docs/00-overview.md) — system overview and how to navigate the docs
 - [`01-architecture.md`](docs/01-architecture.md) — container diagram and protocol decisions
 - [`02-data-model.md`](docs/02-data-model.md) — all tables, retention and aggregation
 - [`03-mqtt-contract.md`](docs/03-mqtt-contract.md) — full topic contract, payloads, ACL
 - [`04-anomaly-state-machine.md`](docs/04-anomaly-state-machine.md) — the core business logic
 - [`08-rag-flow.md`](docs/08-rag-flow.md) — RAG pipeline, anti-hallucination, prompt design
 - [`10-deployment.md`](docs/10-deployment.md) — Docker Compose + Ansible EC2 deployment
+- [`14-auth-guide.md`](docs/14-auth-guide.md) — tokens, refresh, roles, rate limiting
+- [`17-grafana-guide.md`](docs/17-grafana-guide.md) — provisioning, datasource, dashboards
+- [`24-config-module.md`](docs/24-config-module.md) — hot-reload config, thresholds, alert overrides
+- [`25-alert-history.md`](docs/25-alert-history.md) — alert lifecycle, history, retention
+- [`27-landing-demo-access.md`](docs/27-landing-demo-access.md) — public landing + self-service demo signup
+- [`28-first-deploy-runbook.md`](docs/28-first-deploy-runbook.md) — step-by-step production first deploy
+- [`INFRASTRUCTURE-DIAGRAM.md`](docs/INFRASTRUCTURE-DIAGRAM.md) — full stack diagram
 - [`SYSTEM-FLOWS.md`](docs/SYSTEM-FLOWS.md) — end-to-end flows for every scenario
+
+The rest (`05-`, `06-`, `07-`, `09-`, `11-`, `12-`, `13-`, `15-`, `16-`, `18-`, `19-`,
+`20-`, `21-`, `22-`, `23-`, `26-`) cover data sources, module guides, caching, retention,
+troubleshooting, scaling and deployment details.
