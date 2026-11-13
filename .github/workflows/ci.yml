@@ -76,7 +76,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build backend image
-        run: docker build -t backend-test ./backend
+        run: docker build --build-arg NODE_BUILD_HEAP=768 -t backend-test ./backend
       - name: Build frontend image
         run: docker build -t frontend-test ./frontend
       - name: Build simulator image
