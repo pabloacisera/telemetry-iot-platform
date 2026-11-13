@@ -12,8 +12,10 @@ import { AuthModule } from './auth';
 import { RagModule } from './rag';
 import { MotorConfigModule } from './config-module';
 import { LandingModule } from './landing';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true, envFilePath: '../.env' }),
     ScheduleModule.forRoot(),

@@ -1,5 +1,25 @@
 services:
   # ===========================================================
+  # Application entry point (nginx propio de la app)
+  # ===========================================================
+  # El nginx-global redirige el subdominio a telemetry-nginx:80.
+  # Este contenedor hace TODO el routing interno de la app.
+
+  telemetry-nginx:
+    image: nginx:alpine
+    container_name: telemetry-nginx
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - ./nginx/telemetry.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - telemetry-net
+
+  # ===========================================================
   # Infrastructure (no custom code)
   # ===========================================================
 
@@ -141,6 +161,7 @@ services:
       REDIS_PORT: 6379
       MQTT_BROKER_HOST: broker-mqtt
       MQTT_BROKER_PORT: 1883
+      MQTT_DISCONNECT_GRACE_MS: 60000
       MONGO_URI: mongodb://mongo-ragstore:27017/rag_knowledge
     depends_on:
       telemetry-db-mysql:
@@ -170,6 +191,8 @@ services:
     environment:
       MQTT_BROKER_HOST: broker-mqtt
       MQTT_BROKER_PORT: 1883
+      TELEMETRY_INTERVAL_SECONDS: 30
+      HOT_MOTORS_FILE: /app/simulator/data/hot_motors.csv
     volumes:
       - ./simulator/data:/app/simulator/data
     depends_on:

@@ -9,7 +9,7 @@ Built as a full-stack portfolio project targeting a mid/senior backend or fullst
 ## What it does
 
 - **15 virtual motors**, each with 3 sensors: temperature, vibration, current
-- Readings arrive every 15 seconds via MQTT (simulated ESP32 devices)
+- Readings arrive every 30 seconds via MQTT (simulated ESP32 devices)
 - A state machine evaluates each sensor independently and decides when a motor is at risk
 - When a motor enters **alarm**: the operator has a configurable grace window to intervene
 - If no one acts: the system restarts the motor automatically — once. If it trips again, it's disabled
@@ -31,7 +31,7 @@ Built as a full-stack portfolio project targeting a mid/senior backend or fullst
 | Observability | Grafana | Provisioned as code — historical aggregated visualization |
 | LLM | Groq (`llama-3.3-70b-versatile`) | Free, fast, no LangChain wrapper needed for a single orchestrated call |
 | Simulator | Python | 15 virtual ESP32s — realistic traffic generator with fault injection |
-| Infra | Docker Compose + Ansible | 8 containers, one command to run locally or deploy to EC2 |
+| Infra | Docker Compose + Render Free | 8 containers locally; one Docker Web Service in production (no EC2) |
 
 ---
 
@@ -133,7 +133,25 @@ docker compose up --build
 Only the frontend (5173) and the MQTT broker (1883) are published to the host.
 The backend, MySQL, Mongo, Redis and Grafana are internal to the Docker network `telemetry-net`.
 
-Default credentials (seed): `admin@telemetry.com` / `admin123` (admin), `operator@telemetry.com` / `op123` (operator)
+Default local credentials (seed fallback): `admin@telemetry.local` / `admin123` (admin), `operator@telemetry.local` / `operator123` (operator).
+
+In production the seed accounts come from `SEED_ADMIN_*`, `SEED_OPERATOR_*` and `SEED_VIEWER_*`; the seed fails instead of using the local fallback when `NODE_ENV=production`.
+
+---
+
+## Production deployment (Telemetry v3)
+
+The current free deployment runs as a **single Docker Web Service on Render Free**:
+
+- **Render Free** — NestJS + React build + Python simulator + Redis + Mosquitto in one container.
+- **TiDB Cloud Starter** — MySQL-compatible relational database (Prisma).
+- **MongoDB Atlas M0** — RAG knowledge base only.
+- **Grafana Cloud** — provisioned dashboards reading TiDB directly.
+- **Cloudflare** — DNS (`telemetry.artisandevs.site`) and an optional keepalive Worker.
+
+Render Free limitations: the service sleeps after inactivity (the Worker wakes it every 5 minutes), there is no persistent disk, and motors created from the UI are not guaranteed to survive a redeploy. The 15 seed motors always come back from TiDB.
+
+See [`docs/29-render-free-deploy.md`](docs/29-render-free-deploy.md) for the full runbook (TiDB, Atlas, Grafana, Render variables, DNS, seeds, smoke tests and rollback).
 
 ---
 
@@ -148,6 +166,9 @@ cd frontend && npm ci && npx eslint src/ --max-warnings 0 && npx tsc -b && npx j
 
 # Simulator
 cd simulator && pip install -r requirements-dev.txt && pytest tests/ -v
+
+# Combined Render image
+docker build -f Dockerfile.render -t telemetry-render .
 ```
 
 CI runs on every push via GitHub Actions (5 jobs: backend, frontend, simulator, docker build, grafana validation).
@@ -161,9 +182,12 @@ CI runs on every push via GitHub Actions (5 jobs: backend, frontend, simulator, 
 ├── frontend/         React + Redux Toolkit — dashboard, config, alert history
 ├── simulator/        Python — 15 virtual ESP32s with fault injection
 ├── grafana/          Provisioned dashboards and datasources (as code)
-├── ansible/          Automated EC2 deployment playbook
+├── ansible/          Legacy EC2 deployment playbook
 ├── mosquitto/        Broker config — auth, ACL, persistence
-├── docs/             31 markdown files — architecture, data model, guides
+├── cloudflare/       Optional keepalive Worker for Render Free
+├── Dockerfile.render Combined single-container image for Render
+├── start.sh          Process supervisor for the Render container
+├── docs/             32 markdown files — architecture, data model, guides
 └── .kiro/            Specs and steering rules used during development
 ```
 

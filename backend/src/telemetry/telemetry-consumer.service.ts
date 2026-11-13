@@ -342,7 +342,7 @@ export class TelemetryConsumerService implements OnModuleInit, OnModuleDestroy {
    * (telemetry or restart-progress) the timer is re-armed. If it fires, the
    * motor has been silent beyond the grace window and is marked offline.
    *
-   * The grace window must exceed the telemetry interval (15s) to avoid false
+   * The grace window must exceed the telemetry interval (30s) to avoid false
    * positives.
    */
   private startDisconnectionTimer(motorId: number): void {

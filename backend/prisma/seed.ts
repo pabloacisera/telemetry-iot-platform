@@ -3,6 +3,27 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+function requiredSeedUser(
+  emailEnv: string,
+  passwordEnv: string,
+  devEmail: string,
+  devPassword: string,
+  role: string,
+): { email: string; password: string; role: string } {
+  const isProduction = process.env.NODE_ENV === 'production';
+  const email = process.env[emailEnv] ?? (isProduction ? undefined : devEmail);
+  const password =
+    process.env[passwordEnv] ?? (isProduction ? undefined : devPassword);
+
+  if (!email || !password) {
+    throw new Error(
+      `Missing ${emailEnv} or ${passwordEnv}. Set both before running the seed in production.`,
+    );
+  }
+
+  return { email, password, role };
+}
+
 /**
  * Seeds the database with:
  * - 3 sensor_standards (vibration ISO 10816-3, temperature NEMA MG-1, current nameplate).
@@ -116,10 +137,30 @@ async function main(): Promise<void> {
   }
 
   // --- Default Users ---
+  // Production requires SEED_* variables; local development keeps the old
+  // predictable credentials so `docker compose` still works out of the box.
   const defaultUsers = [
-    { email: 'admin@telemetry.local', password: 'admin123', role: 'admin' },
-    { email: 'operator@telemetry.local', password: 'operator123', role: 'operator' },
-    { email: 'viewer@telemetry.local', password: 'viewer123', role: 'viewer' },
+    requiredSeedUser(
+      'SEED_ADMIN_EMAIL',
+      'SEED_ADMIN_PASSWORD',
+      'admin@telemetry.local',
+      'admin123',
+      'admin',
+    ),
+    requiredSeedUser(
+      'SEED_OPERATOR_EMAIL',
+      'SEED_OPERATOR_PASSWORD',
+      'operator@telemetry.local',
+      'operator123',
+      'operator',
+    ),
+    requiredSeedUser(
+      'SEED_VIEWER_EMAIL',
+      'SEED_VIEWER_PASSWORD',
+      'viewer@telemetry.local',
+      'viewer123',
+      'viewer',
+    ),
   ];
 
   for (const u of defaultUsers) {

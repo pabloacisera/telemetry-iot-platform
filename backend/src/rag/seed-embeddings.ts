@@ -13,6 +13,17 @@ const MONGO_URI =
 const EMBEDDING_MODEL =
   process.env.EMBEDDING_MODEL || 'Xenova/all-MiniLM-L6-v2';
 
+function redactMongoUri(uri: string): string {
+  try {
+    const parsed = new URL(uri);
+    if (parsed.username) parsed.username = '***';
+    if (parsed.password) parsed.password = '***';
+    return parsed.toString();
+  } catch {
+    return '<invalid MongoDB URI>';
+  }
+}
+
 const embeddingSchema = new mongoose.Schema(
   {
     chunk_text: { type: String, required: true },
@@ -27,7 +38,7 @@ const embeddingSchema = new mongoose.Schema(
 );
 
 async function main() {
-  console.log(`Connecting to MongoDB: ${MONGO_URI}`);
+  console.log(`Connecting to MongoDB: ${redactMongoUri(MONGO_URI)}`);
   await mongoose.connect(MONGO_URI);
 
   const EmbeddingModel = mongoose.model('Embedding', embeddingSchema);

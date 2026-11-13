@@ -1,0 +1,97 @@
+# Combined single-container image for Render Free.
+#
+# Contents:
+# - React frontend build served by NestJS from /app/public
+# - NestJS backend (Prisma/TiDB, Mongo Atlas, MQTT, Redis, RAG)
+# - Redis + Mosquitto on loopback
+# - Python simulator publishing telemetry every 30s
+#
+# Seeds are NOT run here: they are one-time local commands against TiDB/Atlas.
+
+# ---------------------------------------------------------------------------
+# 1. Frontend builder
+# ---------------------------------------------------------------------------
+FROM node:22-alpine AS frontend-builder
+
+WORKDIR /app/frontend
+
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --legacy-peer-deps
+
+COPY frontend/ ./
+
+ARG VITE_GRAFANA_URL
+ENV VITE_GRAFANA_URL=${VITE_GRAFANA_URL}
+ENV NODE_OPTIONS=--max-old-space-size=512
+
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# 2. Backend builder
+# ---------------------------------------------------------------------------
+FROM node:20-slim AS backend-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app/backend
+
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci
+
+COPY backend/ ./
+RUN rm -f tsconfig.build.tsbuildinfo tsconfig.tsbuildinfo \
+    && npx prisma generate
+
+ENV NODE_OPTIONS=--max-old-space-size=768
+RUN npm run build
+
+# ---------------------------------------------------------------------------
+# 3. Runtime
+# ---------------------------------------------------------------------------
+FROM node:20-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openssl \
+    ca-certificates \
+    python3 \
+    python3-venv \
+    python3-pip \
+    redis-server \
+    redis-tools \
+    mosquitto \
+    mosquitto-clients \
+    curl \
+    tini \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Python simulator dependencies.
+COPY simulator/requirements.txt /app/simulator/requirements.txt
+RUN python3 -m venv /app/venv \
+    && /app/venv/bin/pip install --no-cache-dir -r /app/simulator/requirements.txt
+
+# Backend production dependencies + build artifacts.
+COPY backend/package.json backend/package-lock.json ./
+COPY backend/prisma ./prisma
+RUN npm ci --omit=dev && npx prisma generate
+COPY --from=backend-builder /app/backend/dist ./dist
+
+# Frontend static build.
+COPY --from=frontend-builder /app/frontend/dist ./public
+
+# Simulator source and Mosquitto configuration.
+COPY simulator/ ./simulator/
+COPY mosquitto/mosquitto.conf /mosquitto/config/mosquitto.conf
+COPY mosquitto/acl_file /mosquitto/config/acl_file
+
+# Process supervisor.
+COPY start.sh /app/start.sh
+RUN chmod +x /app/start.sh
+
+EXPOSE 3000
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/app/start.sh"]

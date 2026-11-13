@@ -3,7 +3,7 @@ MotorSimulator class — models a single ESP32 with 3 sensors and MQTT connectiv
 
 Responsibilities:
 - Maintains its own MQTT connection with LWT configured.
-- Publishes telemetry every 15 seconds (when powered on).
+- Publishes telemetry every TELEMETRY_INTERVAL_SECONDS (default 30s).
 - Delegates command handling to command_handler module.
 - Simulates WiFi/LAN reconnection behavior differences.
 
@@ -14,6 +14,7 @@ command_handler.py to keep this file focused on connectivity and telemetry.
 import asyncio
 import json
 import logging
+import os
 import random
 from datetime import datetime, timezone
 
@@ -41,12 +42,28 @@ class MotorSimulator:
         self.broker_host = broker_host
         self.broker_port = broker_port
         self.state = "powered_on"
+        self.telemetry_interval_seconds = self._read_telemetry_interval()
         # Anti-short-cycle countdown (seconds) — survives MQTT reconnects so an
         # interrupted restart resumes where it left off instead of stalling forever.
         self.restart_seconds_remaining = 0
         # Original RESTART command request_id, echoed in the final ack.
         self.pending_restart_request_id: str | None = None
         self.sensors = self._create_sensors()
+
+    @staticmethod
+    def _read_telemetry_interval() -> int:
+        """Read and validate TELEMETRY_INTERVAL_SECONDS (default 30)."""
+        raw = os.getenv("TELEMETRY_INTERVAL_SECONDS", "30")
+        try:
+            interval = int(raw)
+            if interval <= 0:
+                raise ValueError
+        except ValueError:
+            logger.warning(
+                "Invalid TELEMETRY_INTERVAL_SECONDS=%r, using 30 seconds", raw
+            )
+            return 30
+        return interval
 
     def _create_sensors(self) -> dict[SensorType, Sensor]:
         """Create the 3 sensors based on config and standard defaults."""
@@ -164,9 +181,9 @@ class MotorSimulator:
         )
 
     async def _telemetry_loop(self, client: Client) -> None:
-        """Publish telemetry every 15s when powered on."""
+        """Publish telemetry at the configured interval when powered on."""
         while True:
-            await asyncio.sleep(15)
+            await asyncio.sleep(self.telemetry_interval_seconds)
             if self.state != "powered_on":
                 continue
 

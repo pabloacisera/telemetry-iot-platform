@@ -1,0 +1,10 @@
+name = "telemetry-keepalive"
+main = "src/index.js"
+compatibility_date = "2026-11-13"
+workers_dev = true
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+HEALTH_URL = "https://REPLACE-WITH-YOUR-RENDER-SERVICE.onrender.com"

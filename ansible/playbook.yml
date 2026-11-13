@@ -15,8 +15,8 @@
 #
 # Prerequisites on the EC2:
 #   - Docker + Docker Compose v2 installed
-#   - Global Nginx container running at /home/ec2-user/global/nginx
-#   - cloudflared tunnel configured for the domain
+#   - Global Nginx container (nginx-global) running at /opt/infra
+#   - cloudflared tunnel created (login hecho) — su nombre va en tunnel_name
 
 - name: Deploy IoT Telemetry Platform
   hosts: production
@@ -50,6 +50,7 @@
           - "--exclude=__pycache__"
           - "--exclude=dist"
           - "--exclude=coverage"
+          - "--exclude=ansible"
         delete: true
 
     # ----------------------------------------------------------
@@ -58,6 +59,8 @@
     - name: Check .env.production exists locally
       stat:
         path: "{{ playbook_dir }}/files/.env.production"
+      delegate_to: localhost
+      become: false
       register: prod_env
 
     - name: Fail if .env.production is missing
@@ -107,6 +110,16 @@
       retries: 30
       delay: 5
       until: frontend_health.status in [200, 404]
+
+    # ----------------------------------------------------------
+    # 4b. Register subdomain in the tunnel (su URL https)
+    # ----------------------------------------------------------
+    - name: Register subdomain in tunnel {{ tunnel_name }}
+      command: cloudflared tunnel route dns {{ tunnel_name }} {{ app_domain }}
+      become: false
+      register: dns_result
+      changed_when: "'already exists' not in dns_result.stderr"
+      failed_when: dns_result.rc != 0 and 'already exists' not in dns_result.stderr
 
     # ----------------------------------------------------------
     # 5. Nginx site config (canónico: ansible/files/nginx/telemetry.conf)

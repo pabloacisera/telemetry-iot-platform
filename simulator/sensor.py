@@ -118,7 +118,7 @@ class Sensor:
         else:
             self._episode_severity = AnomalySeverity.SEVERE
 
-        # Duration: 4-12 readings (60-180 seconds at 15s intervals)
+        # Duration: 4-12 readings (120-360 seconds at 30s intervals)
         self._episode_remaining = random.randint(4, 12)
         self._episode_active = True
 

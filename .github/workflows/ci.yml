@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "feature/**"]
+    branches: [main, "feature/**", "feat/**"]
   pull_request:
     branches: [main]
 
@@ -81,6 +81,8 @@ jobs:
         run: docker build -t frontend-test ./frontend
       - name: Build simulator image
         run: docker build -t simulator-test ./simulator
+      - name: Build combined Render image
+        run: docker build -f Dockerfile.render -t telemetry-render .
 
   # ==========================================================
   # CD (Continuous Deployment) — NOT ACTIVE YET

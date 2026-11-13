@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
@@ -9,11 +9,16 @@ import { Embedding } from './embedding.schema';
  *
  * The embeddings collection is small (~20 fragments), so all vectors are loaded
  * into memory and similarity is computed in-process — no vector index needed.
+ *
+ * The embedding pipeline is loaded lazily on the first RAG query so the
+ * container can boot (and pass Render's health check) without downloading the
+ * model or allocating its memory.
  */
 @Injectable()
-export class KnowledgeSearchService implements OnModuleInit {
+export class KnowledgeSearchService {
   private readonly logger = new Logger(KnowledgeSearchService.name);
   private pipeline: any = null;
+  private loading: Promise<void> | null = null;
   private readonly similarityThreshold: number;
 
   constructor(
@@ -27,8 +32,23 @@ export class KnowledgeSearchService implements OnModuleInit {
     );
   }
 
-  async onModuleInit() {
-    await this.loadPipeline();
+  /** Ensure the embedding pipeline is loaded exactly once. */
+  private async ensurePipeline(): Promise<void> {
+    if (this.pipeline) {
+      return;
+    }
+
+    if (!this.loading) {
+      this.loading = this.loadPipeline().finally(() => {
+        this.loading = null;
+      });
+    }
+
+    await this.loading;
+
+    if (!this.pipeline) {
+      throw new Error('Embedding pipeline is not available');
+    }
   }
 
   /** Lazily load the embedding pipeline (all-MiniLM-L6-v2). */
@@ -42,7 +62,11 @@ export class KnowledgeSearchService implements OnModuleInit {
       this.pipeline = await pipeline('feature-extraction', modelName);
       this.logger.log(`Embedding model loaded: ${modelName}`);
     } catch (error) {
+      this.pipeline = null;
       this.logger.error(
+        `Failed to load embedding model: ${(error as Error).message}`,
+      );
+      throw new Error(
         `Failed to load embedding model: ${(error as Error).message}`,
       );
     }
@@ -50,9 +74,7 @@ export class KnowledgeSearchService implements OnModuleInit {
 
   /** Vectorize a text string into a 384-dimension float array. */
   async vectorize(text: string): Promise<number[]> {
-    if (!this.pipeline) {
-      await this.loadPipeline();
-    }
+    await this.ensurePipeline();
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call
     const output = await this.pipeline(text, {

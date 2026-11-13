@@ -3,7 +3,15 @@
 # Ansible playbook: Desplegar cualquier app en la EC2
 # =============================================================================
 #
-# Arquitectura: Cloudflare → tunnel (cloudflared) → nginx → app
+# Arquitectura: Cloudflare → túnel (cloudflared) → nginx-global:80 → <app>-nginx
+#
+#   - El nginx-global es "tonto": solo rutea el subdominio al nginx de cada app.
+#   - Cada app vive en /opt/apps/<app>/ con su PROPIO nginx (contenedor
+#     <app>-nginx, puerto 80 interno), su red <app>-net (la crea docker compose)
+#     y su docker-compose.yml. El routing interno (/api, /socket.io, DB, etc.)
+#     lo hace el nginx de la app, NO el global.
+#   - Ansible conecta <app>-net a nginx-global (docker network connect) para que
+#     el global resuelva el nombre <app>-nginx.
 #
 # Uso:
 #   cd ansible
@@ -14,22 +22,23 @@
 #
 # Con migraciones:
 #   ansible-playbook deploy-app.yml -i inventory.ini \
-#     -e "app_name=tienda" \
-#     -e "app_subdomains=tienda.artisandevs.site" \
-#     -e "tunnel_name=mi-tunnel" \
-#     -e "run_migrations=true"
+#     -e "app_name=tienda" -e "app_subdomains=tienda.artisandevs.site" \
+#     -e "tunnel_name=mi-tunnel" -e "run_migrations=true"
 #
-# Prerrequisitos en la EC2:
+# Prerrequisitos en la EC2 (etapa manual, una sola vez):
 #   - Docker + Docker Compose v2 instalado
-#   - nginx-global corriendo en /opt/infra
-#   - cloudflared configurado con un tunnel activo
+#   - nginx-global corriendo en /opt/infra (puerto 80)
+#   - cloudflared instalado y túnel creado (login hecho)
 #   - Carpeta /opt/infra/conf.d/ para configs de nginx
 #
 # Prerrequisitos en tu máquina local:
-#   - Ansible instalado (sudo apt install ansible)
-#   - SSH key configurada para conectar a la EC2
-#   - Archivo ansible/files/nginx/<app_name>.conf creado
-#   - Archivo docker-compose.yml en la raíz del proyecto
+#   - Ansible instalado (venv) + SSH key configurada
+#   - Archivo ansible/files/nginx/<app_name>.conf (conf GLOBAL mínimo)
+#   - Archivo docker-compose.yml en la raíz del proyecto que declare:
+#       networks:
+#         <app_name>-net:
+#           name: <app_name>-net
+#     y un servicio <app_name>-nginx (nginx de la app) con su conf montado.
 # =============================================================================
 
 - name: "Deploy app: {{ app_name }}"
@@ -37,16 +46,12 @@
   become: true
 
   vars:
-    # Variables obligatorias (el usuario debe pasarlas con -e)
-    app_name: "{{ app_name }}"
-    app_subdomains: "{{ app_subdomains | default('') }}"
-    tunnel_name: "{{ tunnel_name }}"
-
-    # Variables opcionales
+    # Variables opcionales (app_name, app_subdomains y tunnel_name vienen con -e)
     run_migrations: "{{ run_migrations | default(false) }}"
 
     # Rutas fijas (no cambiar)
     deploy_path: "/opt/apps/{{ app_name }}"
+    app_network: "{{ app_name }}-net"
     nginx_conf_dir: "/opt/infra/conf.d"
     nginx_config_src: "{{ playbook_dir }}/files/nginx/{{ app_name }}.conf"
 
@@ -63,19 +68,9 @@
         mode: "0755"
 
     # =========================================================================
-    # 2. Crear red Docker (garantía; docker compose ahora la auto-crea con
-    #    networks: name: <app_name>-net, así que este paso es idempotente)
+    # 2. Copiar archivos del proyecto (la red <app>-net la crea docker compose)
     # =========================================================================
-    - name: "Paso 2: Crear red Docker {{ app_name }}-net"
-      command: "docker network create {{ app_name }}-net"
-      register: network_result
-      changed_when: "'already exists' not in network_result.stderr"
-      failed_when: network_result.rc != 0 and 'already exists' not in network_result.stderr
-
-    # =========================================================================
-    # 3. Copiar archivos del proyecto
-    # =========================================================================
-    - name: "Paso 3: Sincronizar archivos del proyecto a {{ deploy_path }}"
+    - name: "Paso 2: Sincronizar archivos del proyecto a {{ deploy_path }}"
       synchronize:
         src: "{{ playbook_dir }}/../"
         dest: "{{ deploy_path }}/"
@@ -90,14 +85,14 @@
         delete: true
 
     # =========================================================================
-    # 4. Copiar .env (si existe)
+    # 3. Copiar .env (si existe)
     # =========================================================================
-    - name: "Paso 4: Verificar si existe .env.production"
+    - name: "Paso 3: Verificar si existe .env.production"
       stat:
         path: "{{ playbook_dir }}/files/.env.production"
       register: env_file
 
-    - name: "Paso 4: Copiar archivo .env"
+    - name: "Paso 3: Copiar archivo .env"
       copy:
         src: "{{ playbook_dir }}/files/.env.production"
         dest: "{{ deploy_path }}/.env"
@@ -107,16 +102,31 @@
       when: env_file.stat.exists
 
     # =========================================================================
-    # 5. Conectar red de la app a nginx-global
+    # 4. Levantar la app con docker compose (crea <app>-net automáticamente)
     # =========================================================================
-    - name: "Paso 5: Conectar {{ app_name }}-net a nginx-global"
-      command: "docker network connect {{ app_name }}-net nginx-global"
+    - name: "Paso 4: Levantar {{ app_name }} con docker compose"
+      community.docker.docker_compose_v2:
+        project_src: "{{ deploy_path }}"
+        state: present
+        build: policy
+      register: compose_result
+
+    - name: "Paso 4: Mostrar resultado de docker compose"
+      debug:
+        var: compose_result.stdout
+      when: compose_result.changed
+
+    # =========================================================================
+    # 5. Conectar red de la app a nginx-global (después de crear la red)
+    # =========================================================================
+    - name: "Paso 5: Conectar {{ app_network }} a nginx-global"
+      command: "docker network connect {{ app_network }} nginx-global"
       register: connect_result
       changed_when: "'already connected' not in connect_result.stderr"
       failed_when: connect_result.rc != 0 and 'already connected' not in connect_result.stderr
 
     # =========================================================================
-    # 6. Crear config nginx
+    # 6. Crear config nginx (conf GLOBAL mínimo)
     # =========================================================================
     - name: "Paso 6: Verificar si existe config nginx"
       stat:
@@ -139,17 +149,18 @@
       when: not nginx_config_file.stat.exists
 
     # =========================================================================
-    # 7. Registrar subdominios en el tunnel
+    # 7. Registrar subdominios en el túnel (corre como ec2-user, dueño del cert)
     # =========================================================================
     - name: "Paso 7: Registrar subdominios en tunnel {{ tunnel_name }}"
       command: "cloudflared tunnel route dns {{ tunnel_name }} {{ item }}"
       loop: "{{ app_subdomains | split(',') if app_subdomains | length > 0 else [] }}"
+      become: false
       register: dns_result
       changed_when: "'already exists' not in dns_result.stderr"
       when: app_subdomains | length > 0
 
     # =========================================================================
-    # 8. Recargar nginx
+    # 8. Recargar nginx (nunca reiniciar)
     # =========================================================================
     - name: "Paso 8: Validar configuración de nginx"
       command: docker exec nginx-global nginx -t
@@ -161,9 +172,8 @@
 
     # =========================================================================
     # 9. Ejecutar migraciones (opcional)
-    #    NOTA: el backend de este proyecto ya ejecuta `prisma migrate deploy`
-    #    al arrancar (ver backend/Dockerfile). Si una app necesita correrlas
-    #    aquí, ajustar el nombre del servicio correspondiente (ej: telemetry-backend-nestjs).
+    #    El backend de este proyecto ya ejecuta `prisma migrate deploy` al
+    #    arrancar (ver backend/Dockerfile). Para otras apps, ajustar el servicio.
     # =========================================================================
     - name: "Paso 9: Ejecutar migraciones de base de datos"
       command: "docker compose exec -T {{ migration_service | default('backend') }} npx prisma migrate deploy"
@@ -178,29 +188,15 @@
       when: run_migrations | bool and migration_result.changed
 
     # =========================================================================
-    # 10. Levantar la app
-    # =========================================================================
-    - name: "Paso 10: Levantar {{ app_name }} con docker compose"
-      community.docker.docker_compose_v2:
-        project_src: "{{ deploy_path }}"
-        state: present
-        build: policy
-      register: compose_result
-
-    - name: "Paso 10: Mostrar resultado de docker compose"
-      debug:
-        var: compose_result.stdout
-      when: compose_result.changed
-
-    # =========================================================================
     # Resumen
     # =========================================================================
-    - name: "✅ Despliegue completado"
+    - name: "Despliegue completado"
       debug:
         msg:
           - "App: {{ app_name }}"
           - "Carpeta: {{ deploy_path }}"
-          - "Red: {{ app_name }}-net"
+          - "Red: {{ app_network }} (creada por docker compose)"
+          - "Entry point: {{ app_name }}-nginx:80 (ruteado por nginx-global)"
           - "Subdominios: {{ app_subdomains | default('ninguno') }}"
           - "Tunnel: {{ tunnel_name }}"
           - "Migraciones: {{ 'ejecutadas' if run_migrations | bool else 'omitidas' }}"

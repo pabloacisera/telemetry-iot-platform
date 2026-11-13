@@ -14,6 +14,10 @@ RUN npm ci
 
 COPY . .
 RUN npx prisma generate
+# Free-tier (t3.micro, 1GB RAM): cap V8 heap so tsc/seed builds don't OOM.
+# Override with --build-arg NODE_BUILD_HEAP=2048 when building on a bigger machine.
+ARG NODE_BUILD_HEAP=384
+ENV NODE_OPTIONS=--max-old-space-size=${NODE_BUILD_HEAP}
 RUN npm run build
 
 # Compile seed scripts (for one-time execution via docker exec, not on every boot)

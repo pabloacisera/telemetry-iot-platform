@@ -102,7 +102,7 @@ export class LiveContextService {
     // Block 2: MySQL readings history (last 4 hours per sensor)
     const sensorHistory: SensorReadingHistory[] = [];
     for (const ms of motor.sensors) {
-      // Get last 40 readings (≈10 minutes of data at 15s intervals)
+      // Get last 40 readings (≈20 minutes of data at 30s intervals)
       const readings = await this.prisma.reading.findMany({
         where: {
           motorSensorId: ms.id,

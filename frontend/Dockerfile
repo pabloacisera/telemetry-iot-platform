@@ -8,6 +8,8 @@ COPY . .
 # at build time, so it must be provided here (not at runtime).
 ARG VITE_GRAFANA_URL
 ENV VITE_GRAFANA_URL=${VITE_GRAFANA_URL}
+# Free-tier (t3.micro, 1GB RAM): cap V8 heap so the Vite build doesn't OOM
+ENV NODE_OPTIONS=--max-old-space-size=384
 RUN npm run build
 
 # Stage 2: Serve with vite preview (no nginx — global nginx routes by subdomain)

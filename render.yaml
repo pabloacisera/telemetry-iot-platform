@@ -1,0 +1,83 @@
+services:
+  - type: web
+    name: telemetry-iot-platform
+    runtime: docker
+    plan: free
+    region: oregon
+    dockerfilePath: ./Dockerfile.render
+    dockerContext: .
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: MONGO_URI
+        sync: false
+      - key: REDIS_HOST
+        value: 127.0.0.1
+      - key: REDIS_PORT
+        value: "6379"
+      - key: MQTT_BROKER_HOST
+        value: 127.0.0.1
+      - key: MQTT_BROKER_PORT
+        value: "1883"
+      - key: MQTT_BACKEND_USER
+        value: backend_service
+      - key: MQTT_BACKEND_PASS
+        generateValue: true
+      - key: MQTT_QA_USER
+        value: qa_fault_injector
+      - key: MQTT_QA_PASS
+        generateValue: true
+      - key: MQTT_ESP32_PASS_PREFIX
+        generateValue: true
+      - key: MOSQUITTO_CONFIG_DIR
+        value: /mosquitto/config
+      - key: TELEMETRY_INTERVAL_SECONDS
+        value: "30"
+      - key: MQTT_DISCONNECT_GRACE_MS
+        value: "60000"
+      - key: HOT_MOTORS_FILE
+        value: /tmp/hot_motors.csv
+      - key: LOG_LEVEL
+        value: INFO
+      - key: APP_TIMEZONE
+        value: America/Argentina/Buenos_Aires
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 5h
+      - key: GROQ_API_KEY
+        sync: false
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: EMBEDDING_MODEL
+        value: Xenova/all-MiniLM-L6-v2
+      - key: RAG_SIMILARITY_THRESHOLD
+        value: "0.65"
+      - key: TRANSFORMERS_CACHE
+        value: /app/.cache/transformers
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM
+        value: no-reply@artisandevs.site
+      - key: LANDING_DEMO_ROLE
+        value: viewer
+      - key: LANDING_APP_URL
+        value: https://telemetry.artisandevs.site
+      - key: CORS_ORIGIN
+        value: https://telemetry.artisandevs.site
+      - key: RETENTION_DAYS
+        value: "7"
+      - key: ALERT_RETENTION_DAYS
+        value: "30"
+      - key: ALERT_THROTTLE_MS
+        value: "300000"
+      - key: POST_RESTART_COOLDOWN_MS
+        value: "300000"
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=300
+      - key: VITE_GRAFANA_URL
+        value: https://curiousfireplace341.grafana.net

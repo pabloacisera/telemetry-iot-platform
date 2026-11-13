@@ -7,6 +7,17 @@ import {
 import { Logger } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 
+function corsOrigin(): boolean | string[] {
+  const raw = process.env.CORS_ORIGIN?.trim();
+  if (!raw || raw === '*') {
+    return true;
+  }
+  return raw
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 /**
  * WebSocket gateway for real-time event emission to connected frontends.
  *
@@ -17,7 +28,7 @@ import { Server, Socket } from 'socket.io';
  *
  * Emitted events: telemetry, status-change, alert, restart-progress.
  */
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({ cors: { origin: corsOrigin(), credentials: true } })
 export class RealtimeGateway
   implements OnGatewayConnection, OnGatewayDisconnect
 {
