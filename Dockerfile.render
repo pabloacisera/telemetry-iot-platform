@@ -82,9 +82,11 @@ COPY --from=backend-builder /app/backend/dist ./dist
 # Frontend static build.
 COPY --from=frontend-builder /app/frontend/dist ./public
 
-# Simulator source and Mosquitto configuration.
+# Simulator source and Mosquitto configuration. The Render image uses the
+# loopback-only broker config (see mosquitto/mosquitto.render.conf); the
+# compose stack keeps mosquitto.conf so external tools can reach the broker.
 COPY simulator/ ./simulator/
-COPY mosquitto/mosquitto.conf /mosquitto/config/mosquitto.conf
+COPY mosquitto/mosquitto.render.conf /mosquitto/config/mosquitto.conf
 COPY mosquitto/acl_file /mosquitto/config/acl_file
 
 # Process supervisor.

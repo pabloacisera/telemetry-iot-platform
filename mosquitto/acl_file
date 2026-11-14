@@ -174,13 +174,3 @@ topic read system/simulator/#
 
 user qa_fault_injector
 topic write qa/motor/+/inject-fault
-
-user esp32_motor18
-topic write plant/motor/18/telemetry
-topic write plant/motor/18/status
-topic write plant/motor/18/restart-progress
-topic read plant/motor/18/cmd
-topic read plant/motor/18/sensor/+/cmd
-topic write plant/motor/18/cmd/ack
-topic write plant/motor/18/sensor/+/cmd/ack
-topic read qa/motor/18/inject-fault

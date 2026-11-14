@@ -73,10 +73,21 @@ redis-server \
 REDIS_PID=$!
 
 # ---------------------------------------------------------------------------
-# Mosquitto: local broker.
+# Mosquitto: local broker. Its own output is captured to a file (and mirrored
+# to the container logs) so that, if it ever dies, the reason survives a
+# supervisor restart and shows up in Render's logs.
 # ---------------------------------------------------------------------------
-mosquitto -c "$MOSQUITTO_CONFIG_DIR/mosquitto.conf" &
-MOSQUITTO_PID=$!
+: > /tmp/mosquitto.log
+tail -n +1 -F /tmp/mosquitto.log >&2 &
+MOSQUITTO_TAIL_PID=$!
+
+start_mosquitto() {
+  # stdbuf forces line-buffering: without it Mosquitto's stdout is block-buffered
+  # when redirected to a file, so a crash would lose the very reason we capture.
+  stdbuf -oL -eL mosquitto -c "$MOSQUITTO_CONFIG_DIR/mosquitto.conf" >>/tmp/mosquitto.log 2>&1 &
+  MOSQUITTO_PID=$!
+}
+start_mosquitto
 
 # ---------------------------------------------------------------------------
 # Auth-file watcher: the backend updates password_file/acl_file when a dynamic
@@ -188,22 +199,39 @@ cleanup() {
   fi
   CLEANED=1
   log "Shutting down..."
-  kill "$SIMULATOR_PID" "$BACKEND_PID" "$WATCHER_PID" "$MOSQUITTO_PID" "$REDIS_PID" 2>/dev/null || true
-  wait "$SIMULATOR_PID" "$BACKEND_PID" "$WATCHER_PID" "$MOSQUITTO_PID" "$REDIS_PID" 2>/dev/null || true
+  kill "$SIMULATOR_PID" "$BACKEND_PID" "$WATCHER_PID" "$MOSQUITTO_TAIL_PID" "$MOSQUITTO_PID" "$REDIS_PID" 2>/dev/null || true
+  wait "$SIMULATOR_PID" "$BACKEND_PID" "$WATCHER_PID" "$MOSQUITTO_TAIL_PID" "$MOSQUITTO_PID" "$REDIS_PID" 2>/dev/null || true
 }
 trap cleanup EXIT
 trap 'exit 0' INT TERM
 
 # ---------------------------------------------------------------------------
-# Supervise critical processes. If any dies, exit non-zero so Render restarts
-# the whole container instead of leaving it half-alive.
+# Supervise critical processes.
+#
+# Mosquitto is restarted a few times with a short backoff instead of tearing
+# the whole container down: a single broker hiccup should not fail the Render
+# deploy. If it keeps dying, we log the captured reason and exit non-zero so
+# Render restarts the container (and the logs stay informative).
 # ---------------------------------------------------------------------------
+MOSQUITTO_RESTART_LIMIT=3
+mosquitto_restarts=0
+
 while true; do
   if ! kill -0 "$REDIS_PID" 2>/dev/null; then
     die "Redis exited"
   fi
   if ! kill -0 "$MOSQUITTO_PID" 2>/dev/null; then
-    die "Mosquitto exited"
+    mosquitto_code=0
+    wait "$MOSQUITTO_PID" 2>/dev/null || mosquitto_code=$?
+    log "Mosquitto exited (code=$mosquitto_code). Last log lines:"
+    tail -n 40 /tmp/mosquitto.log 2>/dev/null || true
+    mosquitto_restarts=$((mosquitto_restarts + 1))
+    if [ "$mosquitto_restarts" -gt "$MOSQUITTO_RESTART_LIMIT" ]; then
+      die "Mosquitto exited $mosquitto_restarts times; giving up"
+    fi
+    sleep 5
+    log "Restarting Mosquitto (attempt $mosquitto_restarts/$MOSQUITTO_RESTART_LIMIT)"
+    start_mosquitto
   fi
   if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
     die "Backend exited"
