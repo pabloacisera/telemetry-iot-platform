@@ -20,3 +20,7 @@ shortcomings, they are conscious scope decisions for a 10-day project.
   MySQL with a read replica (Grafana querying the replica, not the primary) and the backend running in
   more than one replica behind a load balancer, with Redis as shared state between replicas (it already is,
   by design).
+- **RAG throughput (Groq free-tier rate limit)**: the assistant is capped at ~2 queries/minute because
+  `openai/gpt-oss-120b` allows 8,000 tokens/minute and each request spends ~4k tokens (mostly the system
+  prompt). Under load it returns a fallback + logs a 429. The fix is a configuration/tuning change, not a
+  bug: see **"Performance tuning — Groq free-tier rate limit"** in `docs/16-rag-guide.md`.

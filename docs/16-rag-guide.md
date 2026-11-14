@@ -128,3 +128,47 @@ scroll horizontally instead of overflowing the card.
 - Does not use LangChain or any orchestration framework.
 - Does not query MySQL for raw readings (uses Redis snapshot for "now", brief summary for "recent").
 - Does not store conversation history server-side (the frontend's `ragSlice` holds session context).
+
+## Performance tuning — Groq free-tier rate limit (ACTION ITEM)
+
+> **Status: known limitation, deliberately deferred.** Revisit this if the assistant ever feels slow or
+> answers with *"No pude procesar tu pregunta en este momento. Intentá de nuevo en unos segundos."*
+
+### Symptom
+
+After a few queries in quick succession, `/api/rag/query` returns the generic fallback above and the
+backend logs a 429:
+
+```
+[RagQueryService] Groq API error (429): Rate limit reached for model `openai/gpt-oss-120b` ...
+on tokens per minute (TPM): Limit 8000, Used 6868, Requested 3777. Please try again in 19.8s.
+```
+
+### Why
+
+Groq's free (`on_demand`) tier for `openai/gpt-oss-120b` allows **8,000 tokens per minute**. Each RAG
+request consumes roughly **3,800–4,100 tokens**, so only **~2 queries/minute** get through. The token cost
+is dominated by the system prompt in `backend/src/rag/rag-query.service.ts` → `buildSystemPrompt()`
+(~40 lines / ~2k tokens of behavioural rules), plus the knowledge fragments and the live-context block.
+
+### The configuration to adjust (in priority order)
+
+1. **Change the model** — `GROQ_MODEL` is read from the env var (default `openai/gpt-oss-120b`, set in
+   `render.yaml`). Check the current free-tier limits at <https://console.groq.com/docs/rate-limits> and
+   pick the highest-TPM model that still answers well. **No code change needed** — just the env var
+   (`render.yaml` + the Render dashboard).
+2. **Trim `buildSystemPrompt()`** in `backend/src/rag/rag-query.service.ts` (~lines 149–197). It carries a
+   lot of repeated prose; condensing it to the essential rules cuts the per-request token cost directly
+   (cost ≈ prompt size + context + answer).
+3. **Cap the answer size** — lower `max_tokens` in `callGroq()` (currently `1024`).
+4. **Add retry/backoff** on HTTP 429 inside `callGroq()` — today it returns the fallback immediately.
+
+### Where to look
+
+- `backend/src/rag/rag-query.service.ts` — `buildSystemPrompt()` and `callGroq()`.
+- `render.yaml` — `GROQ_MODEL` (and any future token-budget env var).
+- Groq rate limits: <https://console.groq.com/docs/rate-limits>
+
+### How to verify a fix
+
+Fire 5 RAG queries within a minute; none should log a 429 (check the Render logs).

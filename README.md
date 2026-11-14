@@ -203,6 +203,7 @@ The `docs/` folder has 31 files covering every layer of the system in detail:
 - [`03-mqtt-contract.md`](docs/03-mqtt-contract.md) — full topic contract, payloads, ACL
 - [`04-anomaly-state-machine.md`](docs/04-anomaly-state-machine.md) — the core business logic
 - [`08-rag-flow.md`](docs/08-rag-flow.md) — RAG pipeline, anti-hallucination, prompt design
+- [`16-rag-guide.md`](docs/16-rag-guide.md) — RAG developer guide (includes Groq rate-limit tuning)
 - [`10-deployment.md`](docs/10-deployment.md) — Docker Compose + Ansible EC2 deployment
 - [`14-auth-guide.md`](docs/14-auth-guide.md) — tokens, refresh, roles, rate limiting
 - [`17-grafana-guide.md`](docs/17-grafana-guide.md) — provisioning, datasource, dashboards
