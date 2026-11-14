@@ -5,14 +5,14 @@
 |---|---|---|
 | Embeddings | `all-MiniLM-L6-v2` via `@xenova/transformers` (Node.js, CPU-only, 384 dimensions) | Runs locally without external API, decoupled from LLM, sufficient for 15-20 fragments. |
 | Vector DB | MongoDB (`embeddings` collection, cosine similarity computed in-process) | Knowledge base is small; doesn't justify pgvector or FAISS. |
-| LLM | Groq (`llama-3.3-70b-versatile`) via direct REST API | Free, fast, good quality. No LangChain (a single orchestrated call doesn't justify it). |
+| LLM | Groq (`openai/gpt-oss-120b`) via direct REST API | Free, fast, good quality. No LangChain (a single orchestrated call doesn't justify it). |
 | Orchestration | Custom code in NestJS (`RagQueryService`) | Manually crafted prompt, no framework dependency. |
 | Similarity threshold | `RAG_SIMILARITY_THRESHOLD` env var, default 0.65 | Adjustable empirically against real questions. |
 
 ## Environment variables
 ```
 GROQ_API_KEY=...
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-120b
 EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
 RAG_SIMILARITY_THRESHOLD=0.65
 ```
@@ -34,7 +34,7 @@ responsibility. Two non-negotiable principles:
    against the `embeddings` collection in Mongo, returns the top-3 most relevant fragments (only if they
    exceed the minimum similarity threshold).
 3. **RagQueryService** — assembles the prompt combining (1) live snapshot + recent summary, (2) knowledge
-   fragments, (3) the original question. Calls Groq (`llama-3.3-70b-versatile`) via REST API.
+   fragments, (3) the original question. Calls Groq (`openai/gpt-oss-120b`) via REST API.
 4. **Anti-hallucination filter** — before returning the response, verifies that it's not citing as a
    verified fact the value of a sensor marked `fault`. If the LLM did so, that part is rewritten with a
    "data unreliable" warning.

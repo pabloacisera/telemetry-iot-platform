@@ -52,11 +52,11 @@ services:
       - key: GROQ_API_KEY
         sync: false
       - key: GROQ_MODEL
-        value: llama-3.3-70b-versatile
+        value: openai/gpt-oss-120b
       - key: EMBEDDING_MODEL
         value: Xenova/all-MiniLM-L6-v2
       - key: RAG_SIMILARITY_THRESHOLD
-        value: "0.65"
+        value: "0.55"
       - key: TRANSFORMERS_CACHE
         value: /app/.cache/transformers
       - key: RESEND_API_KEY

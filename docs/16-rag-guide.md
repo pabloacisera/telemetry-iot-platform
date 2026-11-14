@@ -29,7 +29,7 @@ Operator asks a question → POST /rag/query { motor_id?, question }
   → LiveContextService: reads Redis snapshot + recent alerts/status history for that motor
   → KnowledgeSearchService: vectorizes the question, searches embeddings by cosine similarity
   → RagQueryService: assembles prompt (live context + knowledge fragments + question)
-  → Calls Groq LLM (llama-3.3-70b-versatile) via REST
+  → Calls Groq LLM (openai/gpt-oss-120b) via REST
   → Anti-hallucination filter: strips/rewrites any claim about a sensor in fault state
   → Returns response to frontend
 ```
@@ -41,7 +41,7 @@ Operator asks a question → POST /rag/query { motor_id?, question }
 | `all-MiniLM-L6-v2` via `@xenova/transformers` | Runs locally in Node.js (CPU-only), no external embedding API needed. 384 dimensions, sufficient for ~20 knowledge fragments. |
 | MongoDB `embeddings` collection | The knowledge base is small (~20 fragments); a dedicated vector DB (pgvector, Qdrant) would be overengineered. |
 | Cosine similarity computed in-process | With ~20 vectors of 384 dims, loading them all into memory and computing similarity is trivial — no index needed. |
-| Groq (`llama-3.3-70b-versatile`) | Free tier, fast inference, good quality. Direct REST call — no SDK framework needed. |
+| Groq (`openai/gpt-oss-120b`) | Free tier, fast inference, good quality. Direct REST call — no SDK framework needed. |
 | No LangChain | A single orchestrated LLM call with a hand-crafted prompt doesn't justify a framework dependency. Custom code is simpler, more debuggable, and has fewer moving parts. |
 | Similarity threshold (0.65 default) | Configurable via `RAG_SIMILARITY_THRESHOLD` env var. Below this, the system says "insufficient information" instead of forcing a weak match. |
 
@@ -100,7 +100,7 @@ Body: { motor_id?: number, question: string }
 
 ```
 GROQ_API_KEY=...
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-120b
 EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
 RAG_SIMILARITY_THRESHOLD=0.65
 ```

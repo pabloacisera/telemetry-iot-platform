@@ -5,7 +5,7 @@
 |---|---|
 | Embeddings | `all-MiniLM-L6-v2` via `@xenova/transformers` (Node.js, CPU-only, 384 dimensions) |
 | Vector storage | MongoDB (`embeddings` collection), cosine similarity computed in-process |
-| LLM | Groq (`llama-3.3-70b-versatile`) via direct REST API (no LangChain) |
+| LLM | Groq (`openai/gpt-oss-120b`) via direct REST API (no LangChain) |
 | Orchestration | Custom code in NestJS (`RagQueryService`) |
 | Similarity threshold | env `RAG_SIMILARITY_THRESHOLD`, default 0.65 |
 
@@ -33,7 +33,7 @@ Content: hand-written fragments based on ISO 10816-3, NEMA MG-1, and typical tro
 ## Environment variables
 ```
 GROQ_API_KEY=...
-GROQ_MODEL=llama-3.3-70b-versatile
+GROQ_MODEL=openai/gpt-oss-120b
 EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
 RAG_SIMILARITY_THRESHOLD=0.65
 ```

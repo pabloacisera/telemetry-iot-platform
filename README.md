@@ -29,7 +29,7 @@ Built as a full-stack portfolio project targeting a mid/senior backend or fullst
 | Backend | NestJS + TypeScript | Layered architecture, DTOs, guards, WebSocket gateway |
 | Frontend | React + Redux Toolkit | Explicit global state management — required by the target position |
 | Observability | Grafana | Provisioned as code — historical aggregated visualization |
-| LLM | Groq (`llama-3.3-70b-versatile`) | Free, fast, no LangChain wrapper needed for a single orchestrated call |
+| LLM | Groq (`openai/gpt-oss-120b`) | Free, fast, no LangChain wrapper needed for a single orchestrated call |
 | Simulator | Python | 15 virtual ESP32s — realistic traffic generator with fault injection |
 | Infra | Docker Compose + Render Free | 8 containers locally; one Docker Web Service in production (no EC2) |
 
