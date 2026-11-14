@@ -56,7 +56,7 @@ services:
       - key: EMBEDDING_MODEL
         value: Xenova/all-MiniLM-L6-v2
       - key: RAG_SIMILARITY_THRESHOLD
-        value: "0.55"
+        value: "0.45"
       - key: TRANSFORMERS_CACHE
         value: /app/.cache/transformers
       - key: RESEND_API_KEY

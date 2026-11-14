@@ -7,14 +7,14 @@
 | Vector DB | MongoDB (`embeddings` collection, cosine similarity computed in-process) | Knowledge base is small; doesn't justify pgvector or FAISS. |
 | LLM | Groq (`openai/gpt-oss-120b`) via direct REST API | Free, fast, good quality. No LangChain (a single orchestrated call doesn't justify it). |
 | Orchestration | Custom code in NestJS (`RagQueryService`) | Manually crafted prompt, no framework dependency. |
-| Similarity threshold | `RAG_SIMILARITY_THRESHOLD` env var, default 0.65 | Adjustable empirically against real questions. |
+| Similarity threshold | `RAG_SIMILARITY_THRESHOLD` env var, default 0.45 | Adjustable empirically against real questions. |
 
 ## Environment variables
 ```
 GROQ_API_KEY=...
 GROQ_MODEL=openai/gpt-oss-120b
 EMBEDDING_MODEL=Xenova/all-MiniLM-L6-v2
-RAG_SIMILARITY_THRESHOLD=0.65
+RAG_SIMILARITY_THRESHOLD=0.45
 ```
 
 ## Scope (final decision after design iteration)

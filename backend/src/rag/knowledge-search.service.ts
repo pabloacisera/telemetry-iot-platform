@@ -28,7 +28,7 @@ export class KnowledgeSearchService {
   ) {
     this.similarityThreshold = this.configService.get<number>(
       'RAG_SIMILARITY_THRESHOLD',
-      0.55,
+      0.45,
     );
   }
 
