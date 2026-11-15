@@ -256,7 +256,6 @@ export class LiveContextService {
     const statusMap: Record<string, string> = {
       healthy: 'Saludable',
       alarm: 'Alarma',
-      under_review: 'En revisión',
       shutting_down: 'Deteniendo',
       restarting: 'Reiniciando',
       disabled: 'Deshabilitado',

@@ -1,5 +1,8 @@
 # Guía de Despliegue
 
+> ⚠️ **LEGACY:** describe el patrón multi-app en una **EC2 con nginx global + Cloudflare**,
+> ya retirado. El despliegue vigente es un único contenedor en Render; ver `29-render-free-deploy.md`.
+
 Esta guía explica cómo desplegar múltiples proyectos en una sola instancia EC2,
 usando un nginx global como punto de entrada y Cloudflare para los subdominios.
 

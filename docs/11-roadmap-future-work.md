@@ -3,7 +3,7 @@
 These are points to answer confidently if an interviewer asks "what if this grew?" — they are not design
 shortcomings, they are conscious scope decisions for a 10-day project.
 
-- **Time series**: currently solved with partitioned MySQL + hourly aggregation (see `02-data-model.md`).
+- **Time series**: currently solved with hourly aggregation + raw purge in MySQL (see `02-data-model.md`).
   At much larger scale (hundreds of motors, years of retention), the migration path would be TimescaleDB or
   InfluxDB, which automate compression and retention. The manual mechanism was documented precisely to explain
   why a specialized engine would help in that scenario.

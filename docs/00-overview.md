@@ -29,7 +29,7 @@ an email, the backend creates a user with a temporary password and emails the cr
 6. `06-nestjs-modules.md` and `07-frontend-architecture.md` — how the code is organized.
 7. `08-rag-flow.md` — how the assistant builds its answers.
 8. `09-roles-permissions.md` — who can do what.
-9. `10-deployment.md` — how to deploy, step by step.
+9. `10-deployment.md` — deploy mechanics *(EC2 legacy)*; current runbook is `29-render-free-deploy.md`.
 10. `11-roadmap-future-work.md` — what was intentionally left out and how it would scale.
 11. `12-simulator-guide.md` — the MQTT simulator: what it is, how it works, how to run it.
 12. `13-backend-guide.md` — the backend telemetry core: state machines, modules, design decisions.
@@ -38,5 +38,6 @@ an email, the backend creates a user with a temporary password and emails the cr
 15. `16-rag-guide.md` — the RAG module: live context, knowledge base, anti-hallucination, Groq LLM.
 16. `17-grafana-guide.md` — Grafana observability: provisioned dashboards, historical queries, alerts panel.
 17. `18-caching-guide.md` — caching & performance: Redis write-through, rate limiting, fallback strategy.
-18. `19-deployment-guide.md` — deployment & infra: local Docker workflow, Ansible, container architecture.
+18. `19-deployment-guide.md` — deployment & infra: local Docker workflow, Ansible *(EC2 legacy)*.
 19. `27-landing-demo-access.md` — self-service demo signup from the public landing (user creation + welcome email via Resend).
+20. `29-render-free-deploy.md` — current production deployment (Render Free + TiDB + Atlas + Grafana Cloud).

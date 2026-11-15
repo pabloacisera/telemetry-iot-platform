@@ -1853,7 +1853,7 @@ export const KNOWLEDGE_FRAGMENTS = [
   {
     chunk_text:
       'Diferencia entre alarma de sensor y estado del motor: una alarma se dispara por un sensor puntual; ' +
-      'el estado del motor (healthy, warning, alarm, under_review, shutting_down, restarting, disabled) ' +
+      'el estado del motor (healthy, alarm, shutting_down, restarting, manual_shutdown, disabled) ' +
       'resume la condición global. Un motor puede estar en alarm por un solo sensor en critical mientras ' +
       'los demás son normales; o en warning por varios sensores en zona amarilla. Al responder, distinguir ' +
       'claramente qué sensor dispara la alerta y por qué valor.',

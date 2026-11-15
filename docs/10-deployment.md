@@ -1,5 +1,8 @@
 # Deployment
 
+> ⚠️ **LEGACY:** describe el despliegue **EC2 + `nginx-global` + cloudflared**, ya retirado.
+> El despliegue vigente es un único contenedor en Render; ver `29-render-free-deploy.md`.
+
 ## Port mapping (convention)
 - Only the **frontend (5173)** and the **MQTT broker (1883)** are published to the host.
 - `backend-nestjs` listens internally on **port 3000** (no host port).

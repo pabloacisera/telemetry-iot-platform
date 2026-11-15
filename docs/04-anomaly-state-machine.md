@@ -4,7 +4,7 @@ This is the most important business logic in the system. Read it alongside `03-m
 `05-thresholds-sources.md`.
 
 ## Fixed parameters
-- Reading interval: 15 seconds.
+- Reading interval: 30 seconds.
 - **Consecutive readings threshold**: configurable per motor (`alarmConsecutiveReadings`, default 5).
   When a single sensor sustains anomalous readings for N consecutive readings, the motor enters ALARM.
 - **Grace period**: configurable per motor (`alarmGracePeriodMs`, default 120000ms / 2 minutes).
@@ -19,7 +19,7 @@ This is the most important business logic in the system. Read it alongside `03-m
 - Default `critical_max` values: vibration >4.5 mm/s, temperature >90°C, current >1.3× rated.
 - Sensor restart: 5 seconds. Motor restart: 100 seconds (see rationale in `03-mqtt-contract.md`).
 - Reconnection grace window: 20s WiFi / 5s LAN.
-- Sensor "stuck": same value rounded to 1 decimal for 20 consecutive readings (5 minutes).
+- Sensor "stuck": same value rounded to 1 decimal for 20 consecutive readings (~10 minutes at the 30s interval).
 - Automatic restart attempts per episode: 1 (if recurs → `disabled`). Upon manual reactivation,
   the counter resets to zero.
 
@@ -32,7 +32,7 @@ healthy → shutting_down (critical reading = immediate trip)
 shutting_down → restarting (command sent to motor)
 restarting → healthy (motor comes back online)
 shutting_down/restarting → disabled (trip after previous auto-restart)
-healthy/under_review → manual_shutdown (explicit operator/admin action)
+healthy/alarm → manual_shutdown (explicit operator/admin action)
 ```
 
 ## Sensor states (independent from motor)
@@ -63,7 +63,7 @@ to `shutting_down`.
 When a normal reading arrives, that sensor's consecutive counter resets to 0. If the motor is
 in `alarm` and ALL sensor counters are 0, the motor auto-recovers: `alarm` → `healthy`.
 
-### 5. Ring buffer reset on restart
+### 5. Counter reset on restart
 Upon entering `restarting`, all consecutive counters of ALL sensors are cleared.
 Evaluation starts from zero when the motor resumes publishing telemetry.
 

@@ -6,8 +6,8 @@
 
 - **Backend:** Nuevos endpoints `POST /motors/:id/stop` y `POST /motors/:id/restart` protegidos por `@Roles('admin', 'operator')`.
 - **Frontend:** Botones habilitados/deshabilitados según estado del motor:
-  - **Detener:** disponible si el motor está "Saludable" o "En revisión".
-  - **Reiniciar:** disponible si el motor está "En revisión", "Parada manual" o "Deshabilitado".
+  - **Detener:** disponible si el motor está "Saludable" o "Alarma".
+  - **Reiniciar:** disponible si el motor está "Alarma", "Parada manual" o "Deshabilitado".
 - **Flujo completo:** Frontend → REST API → MQTT → Simulador (100s countdown) → MQTT progress → WebSocket → Frontend (muestra countdown).
 
 ### Página de Referencia de Estados (/referencia)

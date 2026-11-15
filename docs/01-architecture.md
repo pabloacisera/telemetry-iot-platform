@@ -1,6 +1,10 @@
 # Architecture
 
-# Architecture
+> **Deployment note (current):** this document describes the conceptual topology (the
+> `docker-compose` layout). Production today runs as a **single Render container**
+> (NestJS + Redis + Mosquitto + internal simulator) with **TiDB Cloud**, **MongoDB Atlas**
+> and **Grafana Cloud** — no EC2 and no global Nginx. See `29-render-free-deploy.md`.
+> The EC2 / Ansible / `nginx-global` material in `10`, `19`, `26`, `28` is **legacy**.
 
 ## Container diagram (8)
 ```
@@ -30,7 +34,7 @@ its own — the global Nginx on the EC2 routes the subdomain to it.
 ## Inbound data flow (device → dashboard)
 ```
 Simulated ESP32 → MQTT (telemetry) → TelemetryConsumerService → validates DTO
-  → TelemetryEvaluationService (thresholds + sliding window + state machine)
+  → TelemetryEvaluationService (thresholds + per-sensor consecutive counters + state machine)
   → TelemetryRepository (persists to readings)
   → StatusTransitionService (if status change, audits to motor_status_history)
   → CacheModule (updates Redis snapshot)
@@ -48,7 +52,7 @@ Frontend → POST /motors/:id/restart → CommandController → CommandService
 ## Motor vs sensor separation (the most important design decision)
 The state of a motor and the state of each of its 3 sensors are modeled and persisted SEPARATELY.
 A sensor fault (impossible reading, stuck value, disconnection) must never trigger a motor alert;
-a motor only enters `under_review`/`restarting` due to readings from sensors that are healthy (`ok`). See
+a motor only enters `alarm`/`shutting_down`/`restarting` due to readings from sensors that are healthy (`ok`). See
 full detail in `04-anomaly-state-machine.md`.
 
 ## Build order and rationale
@@ -56,7 +60,7 @@ full detail in `04-anomaly-state-machine.md`.
 The system is built in 8 stages (specs), in this precise order:
 
 1. **MQTT Simulator** (spec 01) — built first because without data entering the broker nothing else can be
-   tested. It's a realistic traffic generator: publishes telemetry every 15s, responds to commands, simulates
+   tested. It's a realistic traffic generator: publishes telemetry every 30s, responds to commands, simulates
    faults on demand (via QA script), respects real timings (100s motor restart, 5s sensor restart). Validated
    in isolation against Mosquitto before the backend exists.
 

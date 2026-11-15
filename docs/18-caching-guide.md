@@ -38,7 +38,7 @@ One key per motor_sensor (45 total: 15 motors × 3 sensors). Each is a Redis has
 ### Why write-through, not cache-aside?
 
 Cache-aside (lazy fill) requires handling cache misses, stale data, and invalidation. With only 45 keys
-being updated every 15 seconds, the write overhead is negligible, and the dashboard always gets fresh data
+being updated every 30 seconds, the write overhead is negligible, and the dashboard always gets fresh data
 without needing a fallback path in normal operation.
 
 ## GET /motors — Redis-first with MySQL fallback
@@ -73,6 +73,6 @@ When the limit is exceeded, the response is `429 Too Many Requests` with a `Retr
 ## What this does NOT introduce
 
 - No Redis Pub/Sub (WebSocket push is handled by socket.io, not Redis).
-- No response caching for REST endpoints (data changes every 15 seconds — HTTP caching would be misleading).
-- No Redis cluster or sentinel (single instance is sufficient for 45 keys updated every 15s).
+- No response caching for REST endpoints (data changes every 30 seconds — HTTP caching would be misleading).
+- No Redis cluster or sentinel (single instance is sufficient for 45 keys updated every 30s).
 - No separate rate limiter service (NestJS ThrottlerModule is in-process, sufficient for a single backend instance).

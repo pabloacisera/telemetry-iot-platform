@@ -118,8 +118,8 @@ A disconnection must NOT be interpreted as a fault immediately — it depends on
 - While disconnected, Mosquitto retains pending QoS 1 messages (within the configured queue limit in
   `max_queued_messages`) and redelivers them upon reconnection.
 - **Known limitation**: a very long gap (minutes) could exceed the broker queue and lose messages.
-  For this project (15 motors × 1 msg/15s = ~1 msg/s total), Mosquitto's default queue (1000 msgs)
-  handles ~15 minutes of disconnection without losing anything.
+  For this project (15 motors × 1 msg/30s = ~0.5 msg/s total), Mosquitto's default queue (1000 msgs)
+  handles ~30 minutes of disconnection without losing anything.
 
 ## Restart timings (real values, not compressed)
 
@@ -129,5 +129,5 @@ A disconnection must NOT be interpreted as a fault immediately — it depends on
   on the winding). The real full range is 100s to several minutes depending on motor size; the floor is used
   because the simulated motors are small/medium, not high voltage.
 - Status sequence during a forced restart: `shutting_down` (fast, network+ack time) → `restarting`
-  (100s, with real countdown via `restart-progress`) → `healthy` or straight to `under_review` if the
+  (100s, with real countdown via `restart-progress`) → `healthy` or straight to `alarm` if the
   first new readings are already bad.

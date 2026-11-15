@@ -36,8 +36,8 @@ Grafana container boots
 
 | Decision | Rationale |
 |---|---|
-| Queries `readings_hourly_agg`, not `readings` | Raw readings are partitioned with 3-day retention. Hourly aggregates are lightweight and persist long-term. |
-| One "recent detail" panel queries `readings` (last 3 days) | For short-term forensic analysis when the operator needs per-reading granularity. |
+| Queries `readings_hourly_agg`, not `readings` | Raw readings are purged after `RETENTION_DAYS` (default 7 days). Hourly aggregates are lightweight and persist long-term. |
+| One "recent detail" panel queries `readings` (last 7 days) | For short-term forensic analysis when the operator needs per-reading granularity. |
 | MySQL datasource only | Grafana doesn't need Redis (live snapshot) or Mongo (RAG knowledge). It's a historical tool. |
 | Provisioning as code | Dashboards and datasource are files in the repo. `docker compose down/up` doesn't lose config. |
 | Port 3000 internal, NOT exposed to the host | Grafana lives inside `telemetry-net`. It is not published and has no public subdomain; access is only through the internal network (e.g. SSH tunnel). No collision because the NestJS backend is also internal. |

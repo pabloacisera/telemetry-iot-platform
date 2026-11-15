@@ -44,7 +44,7 @@ responsibility. Two non-negotiable principles:
    information, without inventing a cause.
 
 ## Example of the 3 possible responses
-- **Healthy data**: "Motor 7 is under review: vibration at 3.2 mm/s (warning zone per ISO 10816-3),
+- **Healthy data**: "Motor 7 is healthy, but vibration is at 3.2 mm/s (warning zone per ISO 10816-3),
   temperature and current are normal. This typically indicates imbalance or bearing wear."
 - **Unreliable sensor**: "Motor 7's vibration sensor is marked as failed (stuck reading), I cannot confirm
   the actual value. Temperature and current are within healthy range."

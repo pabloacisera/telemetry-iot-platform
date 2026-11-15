@@ -2,7 +2,7 @@
 
 ## Qué hace
 
-El sistema genera miles de readings crudas por hora (15 motores × 3 sensores × ~1 lectura/segundo ≈ 162.000 filas/hora). Sin retención, MySQL se llenaría en pocos días.
+El sistema genera miles de readings crudas por hora (15 motores × 3 sensores cada 30 s ≈ 5.400 filas/hora). Sin retención, la base crecería sin límite con el tiempo.
 
 El servicio `RetentionService` ejecuta un cron job cada hora que:
 

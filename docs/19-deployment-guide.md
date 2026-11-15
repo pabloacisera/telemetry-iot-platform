@@ -1,5 +1,9 @@
 # Deployment & Infrastructure — Developer Guide
 
+> ⚠️ **LEGACY:** esta guía documenta el despliegue **EC2 + Ansible + `nginx-global`**, ya
+> retirado. El despliegue vigente es un único contenedor en Render; ver `29-render-free-deploy.md`.
+> El material de `docker-compose` sigue siendo válido para desarrollo local.
+
 ## What is this and why is it the last piece built
 
 This spec packages everything built in specs 01-07 into a deployable, reproducible system. It produces:

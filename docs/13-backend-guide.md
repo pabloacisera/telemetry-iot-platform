@@ -32,7 +32,7 @@ MQTT messages arrive → validate DTO → evaluate against thresholds/state mach
 | `CommandModule` | Publishes MQTT commands, correlates request_id ↔ ack |
 | `RealtimeGateway` | WebSocket (socket.io), rooms per motor_id, event emission |
 | `CacheModule` | Redis write-through snapshot |
-| `SchedulerModule` | Daily retention job (partitions, aggregation) |
+| `SchedulerModule` | Hourly retention job (aggregation + raw/alert purge) |
 
 ## The state machine — the core of this spec
 

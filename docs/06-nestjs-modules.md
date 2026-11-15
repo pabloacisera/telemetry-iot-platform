@@ -13,7 +13,7 @@ RealtimeGateway   WebSocket (socket.io), rooms by motor_id, emits telemetry/stat
 CacheModule       Redis wrapper: live snapshot (read and write-through)
 RagModule         LiveContextService + KnowledgeSearchService (Mongo) + RagQueryService (orchestrates + Groq LLM)
 LandingModule     public POST /landing/subscribe: creates a user (role LANDING_DEMO_ROLE) + welcome email via Resend
-ScheduleModule    @nestjs/schedule — daily job: create future partition → aggregate (catch-up) → verify → drop → log result
+ScheduleModule    @nestjs/schedule — hourly job: aggregate previous hour → purge raw > RETENTION_DAYS → log result
 ```
 
 ## Each layer, its exact responsibility (to avoid mixing them)
@@ -43,7 +43,7 @@ If it affects 0 rows → responds 409 Conflict ("already resolved by another use
 TelemetryConsumerService (MQTT subscriber)
   → validates TelemetryEventDto
   → TelemetryEvaluationService.evaluate(reading)
-      → applies sliding window of 8 readings per motor_sensor_id
+      → applies per-sensor consecutive anomalous counters (alarm threshold N)
       → decides if there's a state transition (motor and/or sensor, separately)
       → TelemetryRepository.persist(reading)
       → if transition: StatusTransitionService.apply(...)

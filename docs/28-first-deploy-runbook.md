@@ -1,5 +1,8 @@
 # Runbook: Primer despliegue en la EC2
 
+> ⚠️ **LEGACY:** runbook del despliegue **EC2 + Ansible + `nginx-global`**, ya retirado.
+> El despliegue vigente es un único contenedor en Render; ver `29-render-free-deploy.md`.
+
 Cómo se divide el trabajo:
 
 | Etapa | Quién | Qué |

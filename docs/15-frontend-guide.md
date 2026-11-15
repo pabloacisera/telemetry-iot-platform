@@ -65,7 +65,7 @@ the socket directly.
 |---|---|
 | Redux Toolkit | Explicit global state, required by job position |
 | socket.io-client | Matches backend's socket.io gateway |
-| Recharts (SVG) | Idiomatic React, easy Redux integration, sufficient for 45 series at 15s intervals |
+| Recharts (SVG) | Idiomatic React, easy Redux integration, sufficient for 45 series at 30s intervals |
 | Vite | Fast dev server, simple config |
 
 ## What this does NOT do

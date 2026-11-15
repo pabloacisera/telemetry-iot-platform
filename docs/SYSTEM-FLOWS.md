@@ -1,5 +1,10 @@
 # Sistema de Telemetria Industrial — Guia Completa
 
+> **Alcance:** este documento describe la topología **docker-compose** (local / legacy). En
+> producción hoy corre un **único contenedor en Render** (NestJS + Redis + Mosquitto + simulador)
+> con TiDB Cloud, MongoDB Atlas y Grafana Cloud; ver `29-render-free-deploy.md`. Las secciones de
+> contenedores y "nginx global" describen el entorno de desarrollo.
+
 ## Tabla de Contenidos
 
 1. [Arquitectura General](#1-arquitectura-general)
@@ -55,7 +60,7 @@ Todos comparten la red `telemetry-net`. Las dependencias de arranque:
 
 | Topic | Direccion | QoS | Retain | Que hace |
 |-------|-----------|-----|--------|----------|
-| `plant/motor/{id}/telemetry` | Sim -> Backend | 1 | No | Lee de sensores cada 15s |
+| `plant/motor/{id}/telemetry` | Sim -> Backend | 1 | No | Lee de sensores cada 30s |
 | `plant/motor/{id}/status` | Sim -> Backend | 1 | Si | online/offline + LWT |
 | `plant/motor/{id}/restart-progress` | Sim -> Backend | 0 | No | Cuenta regresiva de reinicio |
 | `plant/motor/{id}/cmd` | Backend -> Sim | 1 | No | Comandos: stop, restart |
@@ -218,7 +223,7 @@ Logica industrial de alarma (ver seccion 5).
 
 Deteccion independiente de fallas por sensor:
 - **out_of_range**: valor fuera de `plausible_min/max`
-- **stuck**: mismo valor (redondeado a 1 decimal) por 20 lecturas consecutivas (~5 min)
+- **stuck**: mismo valor (redondeado a 1 decimal) por 20 lecturas consecutivas (~10 min a 30s)
 - **disconnected**: sin datos en ventana de gracia (20s WiFi / 5s LAN)
 - Primera falla: auto-restart despues de 5s
 - Segunda falla: `fault_persistent` (requiere intervencion manual)
@@ -246,7 +251,6 @@ Cron cada hora (minuto 5):
 | Estado | Significado |
 |--------|-------------|
 | `healthy` | Operacion normal |
-| `under_review` | Todos los sensores en falla simultaneamente |
 | `alarm` | Anomalia detectada, gracia activa |
 | `shutting_down` | Apagandose (comando stop o LWT offline) |
 | `restarting` | Reiniciando (100s de countdown) |
@@ -428,7 +432,7 @@ Backend evalua telemetria
 
 ## 9. Flujo Completo de un Dato
 
-### Telemetria normal (cada 15 segundos)
+### Telemetria normal (cada 30 segundos)
 
 ```
 1. Simulator: Sensor.generate_reading() -> valor con ruido gaussiano
@@ -531,7 +535,7 @@ Backend evalua telemetria
 - `.env` — variables de entorno
 
 ### Documentacion existente
-- `docs/00-overview.md` a `docs/24-config-module.md` — 25 archivos de documentacion
+- `docs/00-overview.md` a `docs/29-render-free-deploy.md` — 32 archivos de documentacion
 - `CHANGELOG-2026-08-05.md` — cambios recientes (hot-reload, alarmas industriales, episodios)
 
 ---
@@ -589,7 +593,7 @@ La suscripcion es unidireccional por topic. El backend se suscribe a `plant/moto
 
 ### Flush en telemetria
 
-Vaciar el buffer en memoria a la base de datos. `TelemetryRepository` acumula lecturas en un array en memoria y las escribe a MySQL cada 500ms con `createMany` (una sola query con many inserts). Si el buffer llega a 200 lecturas, hace flush inmediato sin esperar los 500ms. Es un patron de batching para no hacer 1 insert por cada lectura (seria muy lento con 15 motores x 3 sensores x cada 15s).
+Vaciar el buffer en memoria a la base de datos. `TelemetryRepository` acumula lecturas en un array en memoria y las escribe a MySQL cada 500ms con `createMany` (una sola query con many inserts). Si el buffer llega a 200 lecturas, hace flush inmediato sin esperar los 500ms. Es un patron de batching para no hacer 1 insert por cada lectura (seria muy lento con 15 motores x 3 sensores x cada 30s).
 
 ### Servicio de retencion
 

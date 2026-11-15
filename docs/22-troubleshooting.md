@@ -3,6 +3,11 @@
 Registro histórico de errores encontrados en el proyecto, su causa raíz y la solución aplicada.
 Cada entrada incluye fecha, síntoma, diagnóstico y commit/archivos afectados.
 
+> **Nota de vigencia:** es un registro histórico (incidentes de 2026-08). Algunas entradas
+> describen decisiones que luego cambiaron. En particular, el almacenamiento del access token
+> pasó de `localStorage` a **memoria de Redux** (nunca `localStorage`); ver `14-auth-guide.md`.
+> Las entradas que mencionan `localStorage` reflejan el estado de esa fecha, no el diseño actual.
+
 ---
 
 ## ERR-001: Pool de conexiones Prisma agotado (Connection Pool Timeout)
@@ -45,7 +50,7 @@ Todos los motores fallan simultáneamente. El backend entra en un loop de recone
   1. Cantidad de motores activos vs `connection_limit` en DATABASE_URL.
   2. Si el flush interval (500ms) es suficiente para la tasa de mensajes.
   3. Performance de MySQL (tablas sin índice, disco lleno, etc.).
-- Considerar implementar particionado de la tabla `reading` cuando supere los 10M de registros.
+- Considerar particionado de la tabla `readings` si el volumen supera los ~10M de registros (hoy se purga por `DELETE` horario, sin particiones).
 
 ---
 

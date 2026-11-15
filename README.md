@@ -46,7 +46,7 @@ Simulated ESP32s (Python)
         ▼
   backend-nestjs (:3000, internal)
   ├── TelemetryConsumerService   → validates, evaluates state machine
-  ├── TelemetryEvaluationService → thresholds + sliding window + alarm logic
+  ├── TelemetryEvaluationService → thresholds + per-sensor consecutive counters + alarm logic
   ├── StatusTransitionService    → motor/sensor state transitions + audit log
   ├── CacheModule                → Redis write-through (live snapshot)
   ├── RealtimeGateway            → WebSocket push to frontend rooms
@@ -60,7 +60,7 @@ Simulated ESP32s (Python)
         │
         ▼
   dashboard-grafana (internal, reads MySQL only)
-  frontend-react (:5173)  ← REST + WebSocket (routed by the global Nginx)
+  frontend-react (:5173)  ← REST + WebSocket (dev: Vite preview + proxy; prod: single Render container)
 ```
 
 **Protocol split:**
@@ -195,7 +195,7 @@ CI runs on every push via GitHub Actions (5 jobs: backend, frontend, simulator, 
 
 ## Documentation
 
-The `docs/` folder has 31 files covering every layer of the system in detail:
+The `docs/` folder has 32 files covering every layer of the system in detail:
 
 - [`00-overview.md`](docs/00-overview.md) — system overview and how to navigate the docs
 - [`01-architecture.md`](docs/01-architecture.md) — container diagram and protocol decisions
@@ -204,14 +204,15 @@ The `docs/` folder has 31 files covering every layer of the system in detail:
 - [`04-anomaly-state-machine.md`](docs/04-anomaly-state-machine.md) — the core business logic
 - [`08-rag-flow.md`](docs/08-rag-flow.md) — RAG pipeline, anti-hallucination, prompt design
 - [`16-rag-guide.md`](docs/16-rag-guide.md) — RAG developer guide (includes Groq rate-limit tuning)
-- [`10-deployment.md`](docs/10-deployment.md) — Docker Compose + Ansible EC2 deployment
+- [`10-deployment.md`](docs/10-deployment.md) — Docker Compose + Ansible EC2 deployment *(legacy)*
 - [`14-auth-guide.md`](docs/14-auth-guide.md) — tokens, refresh, roles, rate limiting
 - [`17-grafana-guide.md`](docs/17-grafana-guide.md) — provisioning, datasource, dashboards
 - [`24-config-module.md`](docs/24-config-module.md) — hot-reload config, thresholds, alert overrides
 - [`25-alert-history.md`](docs/25-alert-history.md) — alert lifecycle, history, retention
 - [`27-landing-demo-access.md`](docs/27-landing-demo-access.md) — public landing + self-service demo signup
-- [`28-first-deploy-runbook.md`](docs/28-first-deploy-runbook.md) — step-by-step production first deploy
-- [`INFRASTRUCTURE-DIAGRAM.md`](docs/INFRASTRUCTURE-DIAGRAM.md) — full stack diagram
+- [`28-first-deploy-runbook.md`](docs/28-first-deploy-runbook.md) — step-by-step first deploy *(EC2, legacy)*
+- [`29-render-free-deploy.md`](docs/29-render-free-deploy.md) — current production runbook (Render Free)
+- [`INFRASTRUCTURE-DIAGRAM.md`](docs/INFRASTRUCTURE-DIAGRAM.md) — full stack diagram *(EC2, legacy)*
 - [`SYSTEM-FLOWS.md`](docs/SYSTEM-FLOWS.md) — end-to-end flows for every scenario
 
 The rest (`05-`, `06-`, `07-`, `09-`, `11-`, `12-`, `13-`, `15-`, `16-`, `18-`, `19-`,

@@ -12,7 +12,7 @@ CREATE TABLE motors (
   rated_current_a DECIMAL(6,2) NOT NULL,
   insulation_class ENUM('B','F','H') DEFAULT 'F',
   connection_type ENUM('wifi','lan') NOT NULL,
-  status ENUM('healthy','under_review','shutting_down','restarting','disabled','manual_shutdown') DEFAULT 'healthy',
+  status ENUM('healthy','alarm','shutting_down','restarting','disabled','manual_shutdown') DEFAULT 'healthy',
   status_changed_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -39,29 +39,26 @@ CREATE TABLE motor_sensors (
   healthy_max DECIMAL(8,2) NOT NULL,          -- editable by admin, validated against sensor_standards
   warning_max DECIMAL(8,2) NOT NULL,
   critical_max DECIMAL(8,2) NOT NULL,         -- value > critical_max → immediate action (no window wait)
-  status ENUM('ok','restarting','fault','fault_persistent') DEFAULT 'ok',
+  status ENUM('ok','fault','fault_persistent') DEFAULT 'ok',
   status_changed_at DATETIME,
   last_value DECIMAL(8,2),
   last_reading_at DATETIME,
   UNIQUE (motor_id, sensor_type)
 );
 
--- Raw readings, partitioned by day, short retention (3 days)
+-- Raw readings, short retention (default 7 days), purged hourly by the retention job.
+-- Plain table (NO MySQL partitioning): the purge is an indexed DELETE by recorded_at.
 CREATE TABLE readings (
-  id BIGINT AUTO_INCREMENT,
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
   motor_sensor_id INT NOT NULL,
   value DECIMAL(8,2) NOT NULL,
   is_anomalous BOOLEAN DEFAULT FALSE,
   is_implausible BOOLEAN DEFAULT FALSE,
   recorded_at DATETIME NOT NULL,
-  PRIMARY KEY (id, recorded_at),
   INDEX (motor_sensor_id, recorded_at)
-) PARTITION BY RANGE (TO_DAYS(recorded_at)) (
-  -- one partition per day, see creation mechanism in the daily job below
-  PARTITION p_20260801 VALUES LESS THAN (TO_DAYS('2026-08-02'))
 );
 
--- Hourly aggregate, long retention, fed by the daily job
+-- Hourly aggregate, long retention, fed by the hourly job
 CREATE TABLE readings_hourly_agg (
   id BIGINT PRIMARY KEY AUTO_INCREMENT,
   motor_sensor_id INT NOT NULL,
@@ -142,11 +139,12 @@ CREATE TABLE motor_alert_overrides (
   max_auto_restarts INT NOT NULL
 );
 
--- Daily retention job log (repeated failure detection)
+-- Retention job log (runs hourly). Column names are legacy; semantics now:
+--   partitions_aggregated = rows aggregated, partitions_dropped = rows deleted.
 CREATE TABLE retention_job_log (
   id INT PRIMARY KEY AUTO_INCREMENT,
   run_at DATETIME NOT NULL,
-  status ENUM('success','failure') NOT NULL,
+  status VARCHAR(10) NOT NULL,               -- 'ok' | 'error'
   partitions_created INT DEFAULT 0,
   partitions_aggregated INT DEFAULT 0,
   partitions_dropped INT DEFAULT 0,
@@ -169,34 +167,25 @@ flow as MySQL persistence (write-through), read on the dashboard's initial snaps
 
 ## The retention mechanism — explained step by step
 
-**Core idea: `readings_hourly_agg` is ONE table that exists from day 1 (created once in the initial
-migration). What runs every day is a JOB that INSERTS new rows into it, not one that recreates it.**
+**Core idea: `readings_hourly_agg` is ONE table that exists from day 1. A job runs every hour and
+(a) inserts new aggregate rows into it and (b) deletes raw readings past the retention window.
+There is NO MySQL partitioning — the purge is a plain indexed `DELETE`.**
 
-### What the daily job does (e.g. runs at 00:10 every day), in this exact order:
+### What the hourly job does (cron `5 * * * *`, i.e. minute :05 of every hour), in this order:
 
-1. **Create tomorrow's partition** in `readings` (`ALTER TABLE readings ADD PARTITION (...)`). This is
-   mandatory: MySQL with `PARTITION BY RANGE` needs the next day's partition to exist BEFORE inserts for
-   that day arrive, or those inserts fail.
-2. **Aggregate** data from ALL partitions older than 3 days that have NOT been aggregated yet (idempotent
-   catch-up: if the job failed yesterday, today it processes both yesterday's and today's). For each
-   `motor_sensor_id`, calculate avg/min/max/anomaly count/fault count per hour, and **insert** them into
-   `readings_hourly_agg` (which already exists, only receives new rows).
-3. **Verify** that the number of aggregated rows makes sense (e.g. ~24 rows per sensor per day) before continuing.
-4. Only if step 3 was successful, **drop** the already-aggregated partitions
-   (`ALTER TABLE readings DROP PARTITION ...`).
-5. **Log** the result to `retention_job_log(run_at, status, error)`.
-6. **If `retention_job_log` shows 2 consecutive failures**, generate a `system_job_failure` alert
-   so the admin is notified.
+1. **Aggregate the previous full hour** (`13:00–13:59` when it runs at `14:05`): for each
+   `motor_sensor_id`, compute avg/min/max and count anomalies/faults, then **upsert** into
+   `readings_hourly_agg` (idempotent on the unique key `(motor_sensor_id, hour_bucket)`).
+2. **Purge raw readings** older than `RETENTION_DAYS` (default **7 days**) with a single
+   `DELETE FROM readings WHERE recorded_at < cutoff`.
+3. **Purge resolved alerts** older than `ALERT_RETENTION_DAYS` (default **30 days**).
+4. **Log** the run to `retention_job_log(run_at, status, partitions_aggregated, partitions_dropped, error)`
+   (the `partitions_*` column names are legacy; today they carry "rows aggregated" / "rows deleted").
 
-### The 2 bugs to avoid (documented on purpose, because they're easy mistakes to make)
-- **Bug 1**: forgetting step 1 (create tomorrow's partition) — next day's inserts fail silently or throw
-  errors depending on config. The job ALWAYS creates the future partition before touching anything else.
-- **Bug 2**: aggregate and drop without verifying in between — if the job crashes between "aggregate" and
-  "drop", that's fine (worst case: re-aggregated next day, the insert must be idempotent with
-  `INSERT ... ON DUPLICATE KEY UPDATE`). But if it drops BEFORE confirming aggregation succeeded, that day's
-  history is lost forever. The order aggregate→verify→drop is non-negotiable.
+A **second cron at minute :20** (`20 * * * *`) runs a safety-net sweep: any alert still open after 24h
+is auto-resolved and an `alert-resolved` event is emitted.
 
 ### Result
-- `readings` never grows indefinitely (always has ~3-4 days of raw data).
-- `readings_hourly_agg` grows slowly and predictably: 45 sensors × 24 rows/day ≈ 1080 rows/day, not heavy.
-- Grafana queries the aggregate for long history, and the raw table for recent detail (last 3 days).
+- `readings` never grows indefinitely (keeps ~`RETENTION_DAYS` of raw data; default 7 days).
+- `readings_hourly_agg` grows slowly and predictably: 45 sensors × 24 rows/day ≈ 1080 rows/day.
+- Grafana queries the aggregate for long history and the raw table for recent detail.

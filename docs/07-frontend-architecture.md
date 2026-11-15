@@ -36,6 +36,6 @@ stop/restart buttons (`admin`/`operator` only), user management (`admin` only). 
 See the full matrix in `09-roles-permissions.md`.
 
 ## Why Recharts and not something else
-With ~45 series updating every 15s, Recharts (SVG, idiomatic to React, easy Redux integration) handles it
+With ~45 series updating every 30s, Recharts (SVG, idiomatic to React, easy Redux integration) handles it
 without issues. If the number of series grew much more, the alternative would be a canvas-based library
 (uPlot/ECharts) for performance — documented as a conscious trade-off, not an unconsidered limitation.

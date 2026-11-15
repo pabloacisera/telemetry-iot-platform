@@ -16,7 +16,7 @@ It is built first because:
 
 ```
 main() → creates 15 MotorSimulator instances (one per motor from config)
-       → async loop: every 15 seconds, each instance generates and publishes telemetry
+       → async loop: every 30 seconds, each instance generates and publishes telemetry
        → each instance also listens for commands (stop, restart, restart_sensor)
        → a separate QA subscription allows injecting faults on demand
 ```
@@ -25,7 +25,7 @@ main() → creates 15 MotorSimulator instances (one per motor from config)
 
 | Behavior | What happens | Timing |
 |---|---|---|
-| Normal telemetry | Publishes 3 sensor values every 15s with realistic noise | Continuous |
+| Normal telemetry | Publishes 3 sensor values every 30s with realistic noise | Continuous |
 | Anomaly (3% chance) | Value multiplied by 1.3–1.8x (real anomaly, not a sensor fault) | Random |
 | Sensor fault: stuck | Same value repeated (injected via QA) | Until cleared |
 | Sensor fault: out_of_range | Physically impossible value (injected via QA) | Until cleared |

@@ -1,3 +1,7 @@
+> ⚠️ **LEGACY:** este diagrama describe la infraestructura **EC2 (13.59.198.49)** con
+> cloudflared + `nginx-global`, ya retirada. El despliegue vigente es un único contenedor
+> en Render (TiDB + Atlas + Grafana Cloud); ver `29-render-free-deploy.md`.
+
 ```mermaid
 graph TB
     subgraph "INTERNET"
