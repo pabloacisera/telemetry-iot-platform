@@ -147,9 +147,9 @@ The current free deployment runs as a **single Docker Web Service on Render Free
 - **TiDB Cloud Starter** — MySQL-compatible relational database (Prisma).
 - **MongoDB Atlas M0** — RAG knowledge base only.
 - **Grafana Cloud** — provisioned dashboards reading TiDB directly.
-- **Cloudflare** — DNS (`telemetry.artisandevs.site`) and an optional keepalive Worker.
+- **Cloudflare** — DNS (`telemetry.artisandevs.site`); a keepalive Worker exists in the repo but is not deployed.
 
-Render Free limitations: the service sleeps after inactivity (the Worker wakes it every 5 minutes), there is no persistent disk, and motors created from the UI are not guaranteed to survive a redeploy. The 15 seed motors always come back from TiDB.
+Render Free limitations: the service sleeps after ~15 minutes without inbound traffic and the first request takes about a minute. The keepalive Worker is optional and currently not deployed, so sleep is expected. There is no persistent disk, and motors created from the UI are not guaranteed to survive a redeploy. The 15 seed motors always come back from TiDB.
 
 See [`docs/29-render-free-deploy.md`](docs/29-render-free-deploy.md) for the full runbook (TiDB, Atlas, Grafana, Render variables, DNS, seeds, smoke tests and rollback).
 

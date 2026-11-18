@@ -1,8 +1,12 @@
 # Keepalive Worker
 
-Cloudflare Worker que llama a `GET /api/health` del servicio Render cada 5
-minutos. Render Free duerme el servicio tras ~15 minutos sin tráfico; este cron
-lo mantiene despierto sin exponer un endpoint adicional en la aplicación.
+Cloudflare Worker opcional que llama a `GET /api/health` del servicio Render cada
+5 minutos. Render Free duerme el servicio tras ~15 minutos sin tráfico; este cron
+puede mantenerlo despierto sin exponer un endpoint adicional en la aplicación.
+
+> **Estado actual:** este Worker **no está desplegado**. Sin él, telemetry duerme y
+> el primer request tras la inactividad tarda alrededor de un minuto. El health
+> check de Render no evita el sleep: solo sondea instancias que ya están corriendo.
 
 ## Requisitos
 

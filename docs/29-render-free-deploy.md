@@ -186,6 +186,10 @@ Verificar en Cloudflare → Workers & Pages → `telemetry-keepalive` → Trigge
 el cron `*/5 * * * *` esté activo. La URL del Worker debe devolver
 `{"ok":true,...}`.
 
+> **Estado actual:** este Worker **no está desplegado**. Sin él, el servicio
+> duerme tras ~15 minutos sin tráfico y el primer request tarda alrededor de un
+> minuto.
+
 ## Paso 8 — Migraciones y seeds (una sola vez)
 
 No ejecutar seeds desde Render. Usar una máquina local con acceso a TiDB y
@@ -240,8 +244,12 @@ para motores/sensores/usuarios, pero reemplaza los embeddings existentes.
 - **Sin disco persistente**: los motores creados desde la UI y los archivos de
   Mosquitto no sobreviven a un redeploy. Los 15 motores seed sí vuelven desde
   TiDB.
-- **Sleep**: sin tráfico, Render duerme. El Worker lo despierta cada 5 minutos;
-  el primer request tras el sleep puede tardar decenas de segundos.
+- **Sleep (latencia en frío)**: sin tráfico entrante, Render duerme el servicio
+  tras ~15 minutos. El primer request tras la inactividad tarda alrededor de un
+  minuto; `/api/health` no evita el sleep porque Render solo sondea instancias que
+  ya están corriendo. El Worker de `cloudflare/keepalive-worker/` es opcional y
+  **no está desplegado** en este entorno, por lo que el sleep es el comportamiento
+  esperado.
 - **Sin IP fija**: Atlas debe permitir `0.0.0.0/0` o usar un proxy.
 - **Un solo proceso por servicio**: no escalar horizontalmente sin separar el
   simulador y el broker.
